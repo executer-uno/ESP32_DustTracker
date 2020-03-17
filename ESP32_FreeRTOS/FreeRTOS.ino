@@ -5,42 +5,26 @@
 #endif
 
 #ifndef LED_BUILTIN
-#define LED_BUILTIN 13
+	#define LED_BUILTIN 2
 #endif
 
-	#define DEB_RX    		3	// Debug UART pins
-	#define DEB_TX    		1	// Debug UART pins
+#define DEB_RX    		3	// Debug UART pins
+#define DEB_TX    		1	// Debug UART pins
 
-
-
+#include "libraries\Extensions.h"
 
 #include "SoftwareSerial.h"
+
 SoftwareSerial Serial;
 
 // define two tasks for Blink & AnalogRead
 void TaskBlink( void *pvParameters );
 void TaskAnalogReadA3( void *pvParameters );
 
-
-/*****************************************************************
- * Debug output																									*
- *****************************************************************/
-void debug_out(const String& text, const bool linebreak) {
-	if (true){ 								//(level <= cfg::debug) {
-		if (linebreak) {
-			Serial.println(text);
-		} else {
-			Serial.print(text);
-		}
-	}
-}
-
-
 // the setup function runs once when you press reset or power the board
 void setup() {
   
   // initialize serial communication at 115200 bits per second:
-	//Serial.begin(115200);
 	Serial.begin(9600, SWSERIAL_8N1, DEB_RX, DEB_TX, false, 95, 11);
 	debug_out(F("SW serial started"), 1);
 
@@ -96,7 +80,7 @@ void TaskBlink(void *pvParameters)  // This is a task.
     digitalWrite(LED_BUILTIN, HIGH);   // turn the LED on (HIGH is the voltage level)
     vTaskDelay(100);  // one tick delay (15ms) in between reads for stability
     digitalWrite(LED_BUILTIN, LOW);    // turn the LED off by making the voltage LOW
-    vTaskDelay(100);  // one tick delay (15ms) in between reads for stability
+    vTaskDelay(1000);  // one tick delay (15ms) in between reads for stability
   }
 }
 
@@ -119,6 +103,6 @@ void TaskAnalogReadA3(void *pvParameters)  // This is a task.
     int sensorValueA3 = analogRead(A3);
     // print out the value you read:
     Serial.println(sensorValueA3);
-    vTaskDelay(10);  // one tick delay (15ms) in between reads for stability
+    vTaskDelay(1000);  // one tick delay (15ms) in between reads for stability
   }
 }
