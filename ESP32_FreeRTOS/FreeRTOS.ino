@@ -4,18 +4,17 @@
 #define ARDUINO_RUNNING_CORE 1
 #endif
 
-#ifndef LED_BUILTIN
-	#define LED_BUILTIN 2
-#endif
-
-#define DEB_RX    		3	// Debug UART pins
-#define DEB_TX    		1	// Debug UART pins
-
+#include "Definitions.h"
 #include "libraries\Extensions.h"
 
 #include "SoftwareSerial.h"
 
 SoftwareSerial Serial;
+HardwareSerial serialSDS(0);
+HardwareSerial serialPMS(1);
+HardwareSerial serialGPS(2);
+
+
 
 // define two tasks for Blink & AnalogRead
 void TaskBlink( void *pvParameters );
@@ -28,7 +27,24 @@ void setup() {
 	Serial.begin(9600, SWSERIAL_8N1, DEB_RX, DEB_TX, false, 95, 11);
 	debug_out(F("SW serial started"), 1);
 
+	// Configure buttons
+	pinMode(BUT_1, INPUT_PULLUP);
+	pinMode(BUT_2, INPUT_PULLUP);
+	pinMode(BUT_3, INPUT_PULLUP);
   
+	if (true) {
+		serialSDS.begin(9600, SERIAL_8N1, PM_SERIAL_RX,  PM_SERIAL_TX);			 		// for HW UART SDS
+	}
+
+	if (true) {
+		serialPMS.begin(9600, SERIAL_8N1, PM2_SERIAL_RX, PM2_SERIAL_TX);			 	// for HW UART PMS
+	}
+
+	if (true) {
+		serialGPS.begin(9600, SERIAL_8N1, GPS_SERIAL_RX, GPS_SERIAL_TX);			 	// for HW UART GPS
+	}
+
+
   // Now set up two tasks to run independently.
   xTaskCreatePinnedToCore(
     TaskBlink
