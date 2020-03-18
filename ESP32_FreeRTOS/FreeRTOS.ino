@@ -15,6 +15,19 @@ HardwareSerial serialPMS(1);
 HardwareSerial serialGPS(2);
 
 
+namespace cfg {
+	char wlanssid[35] 	= WLANSSID;
+	char wlanpwd[65] 	= WLANPWD;
+
+	char www_username[65] = WWW_USERNAME;
+	char www_password[65] = WWW_PASSWORD;
+
+	char fs_ssid[33]	= FS_SSID;
+	char fs_pwd[65] 	= FS_PWD;
+	int	debug 			= DEBUG;
+}
+
+
 
 // define two tasks for Blink & AnalogRead
 void TaskBlink( void *pvParameters );
@@ -54,6 +67,8 @@ void setup() {
     ,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
     ,  NULL 
     ,  ARDUINO_RUNNING_CORE);
+
+
 
   xTaskCreatePinnedToCore(
     TaskAnalogReadA3
