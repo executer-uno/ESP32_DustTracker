@@ -12,11 +12,11 @@
 		#define LED_BUILTIN 2
 	#endif
 
-	#include <Credentials.h>
+	#include "html-content.h"
+	#include "Credentials.h"
 	//#define WLANSSID   "MyWifiName"  //in Credentials.h
 	//#define WLANPWD    "MyWiFiPass"  //in Credentials.h
 
-	#include <html-content.h>
 	#include "SoftwareSerial.h"
 
 	// Definition der Debuglevel
@@ -83,6 +83,14 @@
 		int	debug 			= DEBUG;
 	}
 
+	enum SensorSt {
+		raw,
+		wait,
+		ok,
+		hold,
+		timeout
+	};
+
 	struct measure {
 		int 	max;
 		int 	min;
@@ -90,10 +98,11 @@
 	};
 
 	struct PMmeas {
-		int32_t count; // number of measurements in accumulator
-		struct measure pm010;
-		struct measure pm025;
-		struct measure pm100;
+		SensorSt		status;		// Sensor initialized and started
+		int32_t 		count; 			// number of measurements in accumulator
+		struct measure 	pm010;
+		struct measure 	pm025;
+		struct measure 	pm100;
 	};
 
 	struct PMmeas SDSmeas;

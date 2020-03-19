@@ -8,6 +8,9 @@
 #ifndef HTML_CONTENT_H_
 #define HTML_CONTENT_H_
 
+#pragma once
+
+	const char TXT_CONTENT_TYPEff_JSON[] PROGMEM = "application/json";
 
 	const char TXT_CONTENT_TYPE_JSON[] PROGMEM = "application/json";
 	const char TXT_CONTENT_TYPE_INFLUXDB[] PROGMEM = "application/x-www-form-urlencoded";

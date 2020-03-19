@@ -8,18 +8,18 @@
 #ifndef LIBRARIES_EXTENSIONS_H_
 #define LIBRARIES_EXTENSIONS_H_
 
-	#include "Definitions.h"
 	#include "SoftwareSerial.h"
+	#include "Definitions.h"
 
 	/*****************************************************************
 	 * Debug output																									*
 	 *****************************************************************/
-	void debug_out(const String& text, const bool linebreak);
+	void debug_out(const String& text, const int level, const bool linebreak);
 
-	String sensorSDS();
-	String sensorPMS();
-	static bool SDS_cmd(PmSensorCmd cmd);
-	static bool PMS_cmd(PmSensorCmd cmd);
+	void sensorSDS();
+	void sensorPMS();
+	void SDS_cmd(PmSensorCmd cmd);
+	void PMS_cmd(PmSensorCmd cmd);
 
 	String Float2String(const double value);
 	String Float2String(const double value, uint8_t digits);

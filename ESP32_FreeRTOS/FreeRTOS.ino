@@ -5,7 +5,7 @@
 #endif
 
 #include "Definitions.h"
-#include "libraries\Extensions.h"
+#include "Extensions.h"
 
 
 
@@ -19,7 +19,7 @@ void setup() {
   
   // initialize serial communication at 115200 bits per second:
 	Serial.begin(9600, SWSERIAL_8N1, DEB_RX, DEB_TX, false, 95, 11);
-	debug_out(F("SW serial started"), 1);
+	debug_out(F("SW serial started"), DEBUG_MED_INFO, 1);
 
 	// Configure buttons
 	pinMode(BUT_1, INPUT_PULLUP);
@@ -38,6 +38,8 @@ void setup() {
 		serialGPS.begin(9600, SERIAL_8N1, GPS_SERIAL_RX, GPS_SERIAL_TX);			 	// for HW UART GPS
 	}
 
+	SDSmeas.status = raw;
+	PMSmeas.status = raw;
 
   // Now set up two tasks to run independently.
   xTaskCreatePinnedToCore(
@@ -59,6 +61,17 @@ void setup() {
     ,  1  // Priority
     ,  NULL 
     ,  ARDUINO_RUNNING_CORE);
+
+
+  xTaskCreatePinnedToCore(
+    TaskReadSDS
+    ,  "ReadSDS"
+    ,  4056  // Stack size
+    ,  NULL
+    ,  1  // Priority
+    ,  NULL
+    ,  ARDUINO_RUNNING_CORE);
+
 
   // Now the task scheduler, which takes over control of scheduling individual tasks, is automatically started.
 }
@@ -116,5 +129,20 @@ void TaskAnalogReadA3(void *pvParameters)  // This is a task.
     // print out the value you read:
     Serial.println(sensorValueA3);
     vTaskDelay(1000);  // one tick delay (15ms) in between reads for stability
+  }
+}
+
+
+void TaskReadSDS(void *pvParameters)  // This is a task.
+{
+  (void) pvParameters;
+
+/*
+*/
+
+  for (;;)
+  {
+	sensorSDS();
+    vTaskDelay(500);  // one tick delay (15ms) in between reads for stability
   }
 }
