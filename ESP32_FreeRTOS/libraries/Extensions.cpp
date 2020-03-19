@@ -5,6 +5,7 @@
  *      Author: E_CAD
  */
 
+#include "Definitions.h"
 #include "Extensions.h"
 
 template<typename T, std::size_t N> constexpr std::size_t array_num_elements(const T(&)[N]) {
@@ -89,27 +90,29 @@ void sensorSDS() {
 			}
 			if (len > 2) { checksum_is += value; }
 			len++;
-			if (len == 10 && checksum_ok == 1 && (msSince(starttime) > (cfg::sending_intervall_ms - READINGTIME_SDS_MS))) {
+
+			// telegramm receieved
+			if (len == 10 && checksum_ok == 1 ) {
 				if ((! isnan(pm10_serial)) && (! isnan(pm25_serial))) {
-					sds_pm10_sum += pm10_serial;
-					sds_pm25_sum += pm25_serial;
-					if (sds_pm10_min > pm10_serial) {
-						sds_pm10_min = pm10_serial;
-					}
-					if (sds_pm10_max < pm10_serial) {
-						sds_pm10_max = pm10_serial;
-					}
-					if (sds_pm25_min > pm25_serial) {
-						sds_pm25_min = pm25_serial;
-					}
-					if (sds_pm25_max < pm25_serial) {
-						sds_pm25_max = pm25_serial;
-					}
+
+					SDSmeas.pm010.sum += pm10_serial;
+					SDSmeas.pm025.sum += pm25_serial;
+
+					SDSmeas.pm010.max = (SDSmeas.pm010.max<pm10_serial ? pm10_serial : SDSmeas.pm010.max);
+					SDSmeas.pm025.max = (SDSmeas.pm025.max<pm25_serial ? pm25_serial : SDSmeas.pm025.max);
+
+					SDSmeas.pm010.min = (SDSmeas.pm010.min>pm10_serial ? pm10_serial : SDSmeas.pm010.min);
+					SDSmeas.pm025.min = (SDSmeas.pm025.min>pm25_serial ? pm25_serial : SDSmeas.pm025.min);
+
+					SDSmeas.count++;
+
+
 					debug_out(F("PM10 (sec.) : "), DEBUG_MED_INFO, 0);
 					debug_out(Float2String(double(pm10_serial) / 10), DEBUG_MED_INFO, 1);
 					debug_out(F("PM2.5 (sec.): "), DEBUG_MED_INFO, 0);
 					debug_out(Float2String(double(pm25_serial) / 10), DEBUG_MED_INFO, 1);
-					sds_val_count++;
+
+
 				}
 				len = 0;
 				checksum_ok = 0;
@@ -386,4 +389,23 @@ static bool PMS_cmd(PmSensorCmd cmd) {//static
 	}
 	serialPMS.write(buf, cmd_len);
 	return cmd != PmSensorCmd::Stop;
+}
+
+
+/*****************************************************************
+ * convert float to string with a																*
+ * precision of two (or a given number of) decimal places				*
+ *****************************************************************/
+String Float2String(const double value) {
+	return Float2String(value, 2);
+}
+
+String Float2String(const double value, uint8_t digits) {
+	// Convert a float to String with two decimals.
+	char temp[15];
+
+	dtostrf(value, 13, digits, temp);
+	String s = temp;
+	s.trim();
+	return s;
 }

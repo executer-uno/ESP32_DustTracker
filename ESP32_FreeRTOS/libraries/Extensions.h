@@ -11,15 +11,6 @@
 	#include "Definitions.h"
 	#include "SoftwareSerial.h"
 
-	extern SoftwareSerial Serial;
-	extern HardwareSerial serialSDS(0);
-	extern HardwareSerial serialPMS(1);
-	extern HardwareSerial serialGPS(2);
-
-	namespace cfg {
-		extern int	debug;
-	}
-
 	/*****************************************************************
 	 * Debug output																									*
 	 *****************************************************************/
@@ -29,5 +20,10 @@
 	String sensorPMS();
 	static bool SDS_cmd(PmSensorCmd cmd);
 	static bool PMS_cmd(PmSensorCmd cmd);
+
+	String Float2String(const double value);
+	String Float2String(const double value, uint8_t digits);
+
+
 
 #endif /* LIBRARIES_EXTENSIONS_H_ */

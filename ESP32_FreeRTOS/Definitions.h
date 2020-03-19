@@ -13,7 +13,11 @@
 	#endif
 
 	#include <Credentials.h>
+	//#define WLANSSID   "MyWifiName"  //in Credentials.h
+	//#define WLANPWD    "MyWiFiPass"  //in Credentials.h
+
 	#include <html-content.h>
+	#include "SoftwareSerial.h"
 
 	// Definition der Debuglevel
 	#define DEBUG_ERROR 	1
@@ -58,5 +62,44 @@
 		ContinuousMode,
 		VersionDate
 	};
+
+
+	// ***************************** Variables *********************************
+
+	SoftwareSerial Serial;
+	HardwareSerial serialSDS(0);
+	HardwareSerial serialPMS(1);
+	HardwareSerial serialGPS(2);
+
+	namespace cfg {
+		char wlanssid[35] 	= WLANSSID;
+		char wlanpwd[65] 	= WLANPWD;
+
+		char www_username[65] = WWW_USERNAME;
+		char www_password[65] = WWW_PASSWORD;
+
+		char fs_ssid[33]	= FS_SSID;
+		char fs_pwd[65] 	= FS_PWD;
+		int	debug 			= DEBUG;
+	}
+
+	struct measure {
+		int 	max;
+		int 	min;
+		int32_t sum;
+	};
+
+	struct PMmeas {
+		int32_t count; // number of measurements in accumulator
+		struct measure pm010;
+		struct measure pm025;
+		struct measure pm100;
+	};
+
+	struct PMmeas SDSmeas;
+	struct PMmeas PMSmeas;
+
+
+
 
 #endif /* DEFINITIONS_H_ */
