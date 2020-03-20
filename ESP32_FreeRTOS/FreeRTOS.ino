@@ -21,6 +21,9 @@ HardwareSerial serialSDS(0);
 HardwareSerial serialPMS(1);
 HardwareSerial serialGPS(2);
 
+String strDebug1 = "";
+String strDebug2 = "";
+
 namespace cfg {
 	char wlanssid[35] 	= WLANSSID;
 	char wlanpwd[65] 	= WLANPWD;
@@ -43,7 +46,7 @@ void TaskReadSDS( void *pvParameters );
 // the setup function runs once when you press reset or power the board
 void setup() {
   
-  // initialize serial communication at 115200 bits per second:
+	// initialize serial communication at 115200 bits per second:
 	Serial.begin(9600, SWSERIAL_8N1, DEB_RX, DEB_TX, false, 95, 11);
 	debug_out(F("SW serial started"), DEBUG_MED_INFO, 1);
 
@@ -69,8 +72,10 @@ void setup() {
 		serialGPS.begin(9600, SERIAL_8N1, GPS_SERIAL_RX, GPS_SERIAL_TX);			 	// for HW UART GPS
 	}
 
-	SDSmeas.status = SensorSt::raw;
-	PMSmeas.status = SensorSt::raw;
+	SDSmeas.status 		= SensorSt::raw;
+	PMSmeas.status 		= SensorSt::raw;
+	SDSmeas.pm010.min	= INT_MAX;
+	SDSmeas.pm025.min	= INT_MAX;
 
   // Now set up two tasks to run independently.
   xTaskCreatePinnedToCore(
@@ -97,7 +102,13 @@ void setup() {
 
 void loop()
 {
-  // Empty. Things are done in Tasks.
+
+	if(strDebug1.length()) {debug_out(strDebug1, DEBUG_MED_INFO, 1);}
+
+	if(strDebug2.length()) {debug_out(strDebug2, DEBUG_MED_INFO, 1);}
+
+	strDebug1 = "";
+	strDebug2 = "";
 }
 
 /*--------------------------------------------------*/
@@ -240,7 +251,6 @@ static void PMS_cmd(PmSensorCmd cmd) {//static
  * read SDS011 sensor values																		 *
  *****************************************************************/
 void sensorSDS() {
-	String s = "";
 	char buffer;
 	int value;
 	int len = 0;
@@ -291,10 +301,12 @@ void sensorSDS() {
 				pm10_serial += (value << 8);
 				break;
 			case (8):
-				debug_out(FPSTR(DBG_TXT_CHECKSUM_IS), DEBUG_MED_INFO, 0);
-				debug_out(String(checksum_is % 256), DEBUG_MED_INFO, 0);
-				debug_out(FPSTR(DBG_TXT_CHECKSUM_SHOULD), DEBUG_MED_INFO, 0);
-				debug_out(String(value), DEBUG_MED_INFO, 1);
+
+				debug_out(FPSTR(DBG_TXT_CHECKSUM_IS), 		DEBUG_MAX_INFO, 0);
+				debug_out(String(checksum_is % 256), 		DEBUG_MAX_INFO, 0);
+				debug_out(FPSTR(DBG_TXT_CHECKSUM_SHOULD), 	DEBUG_MAX_INFO, 0);
+				debug_out(String(value), 					DEBUG_MAX_INFO, 1);
+
 				if (value == (checksum_is % 256)) {
 					checksum_ok = 1;
 				} else {
@@ -325,23 +337,13 @@ void sensorSDS() {
 
 					SDSmeas.count++;
 
+					strDebug1  = "PM1.0 : [" + Float2String(double(SDSmeas.pm010.min) / 10) + " : ";
+					strDebug1 += Float2String(double(SDSmeas.pm010.sum) / (10* SDSmeas.count)) + " : ";
+					strDebug1 += Float2String(double(SDSmeas.pm010.max) / 10) + " ]";
 
-					debug_out(F("PM1.0 : [")								, DEBUG_MED_INFO, 0);
-					debug_out(Float2String(double(SDSmeas.pm010.min) / 10)	, DEBUG_MED_INFO, 0);
-					debug_out(F(" : "), DEBUG_MED_INFO, 0);
-					debug_out(Float2String(double(SDSmeas.pm010.sum) / (10* SDSmeas.count))	, DEBUG_MED_INFO, 0);
-					debug_out(F(" : ")	, DEBUG_MED_INFO, 0);
-					debug_out(Float2String(double(SDSmeas.pm010.max) / 10)	, DEBUG_MED_INFO, 0);
-					debug_out(F(" ]") , DEBUG_MED_INFO, 1);
-
-					debug_out(F("PM2.5 : [")								, DEBUG_MED_INFO, 0);
-					debug_out(Float2String(double(SDSmeas.pm025.min) / 10)	, DEBUG_MED_INFO, 0);
-					debug_out(F(" : "), DEBUG_MED_INFO, 0);
-					debug_out(Float2String(double(SDSmeas.pm025.sum) / (10* SDSmeas.count))	, DEBUG_MED_INFO, 0);
-					debug_out(F(" : ")	, DEBUG_MED_INFO, 0);
-					debug_out(Float2String(double(SDSmeas.pm025.max) / 10)	, DEBUG_MED_INFO, 0);
-					debug_out(F(" ]") , DEBUG_MED_INFO, 1);
-
+					strDebug2  = "PM2.5 : [" + Float2String(double(SDSmeas.pm025.min) / 10) + " : ";
+					strDebug2 += Float2String(double(SDSmeas.pm025.sum) / (10* SDSmeas.count)) + " : ";
+					strDebug2 += Float2String(double(SDSmeas.pm025.max) / 10) + " ]";
 
 				}
 				len = 0;
