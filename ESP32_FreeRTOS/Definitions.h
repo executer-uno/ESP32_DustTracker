@@ -8,16 +8,8 @@
 #ifndef DEFINITIONS_H_
 #define DEFINITIONS_H_
 
-	#ifndef LED_BUILTIN
-		#define LED_BUILTIN 2
-	#endif
-
-	#include "html-content.h"
-	#include "Credentials.h"
-	//#define WLANSSID   "MyWifiName"  //in Credentials.h
-	//#define WLANPWD    "MyWiFiPass"  //in Credentials.h
-
-	#include "SoftwareSerial.h"
+	// Build in LED
+	#define LED_BUILTIN 2
 
 	// Definition der Debuglevel
 	#define DEBUG_ERROR 	1
@@ -55,40 +47,19 @@
 	#define BUT_2 			33
 	#define BUT_3 			27
 
+	enum class SensorSt {
+		raw,
+		wait,
+		ok,
+		hold,
+		timeout
+	};
 
 	enum class PmSensorCmd {
 		Start,
 		Stop,
 		ContinuousMode,
 		VersionDate
-	};
-
-
-	// ***************************** Variables *********************************
-
-	SoftwareSerial Serial;
-	HardwareSerial serialSDS(0);
-	HardwareSerial serialPMS(1);
-	HardwareSerial serialGPS(2);
-
-	namespace cfg {
-		char wlanssid[35] 	= WLANSSID;
-		char wlanpwd[65] 	= WLANPWD;
-
-		char www_username[65] = WWW_USERNAME;
-		char www_password[65] = WWW_PASSWORD;
-
-		char fs_ssid[33]	= FS_SSID;
-		char fs_pwd[65] 	= FS_PWD;
-		int	debug 			= DEBUG;
-	}
-
-	enum SensorSt {
-		raw,
-		wait,
-		ok,
-		hold,
-		timeout
 	};
 
 	struct measure {
@@ -104,11 +75,6 @@
 		struct measure 	pm025;
 		struct measure 	pm100;
 	};
-
-	struct PMmeas SDSmeas;
-	struct PMmeas PMSmeas;
-
-
 
 
 #endif /* DEFINITIONS_H_ */
