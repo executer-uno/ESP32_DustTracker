@@ -18,7 +18,7 @@
 	#define DEBUG_MED_INFO 	4
 	#define DEBUG_MAX_INFO 	5
 	// Wieviele Informationen sollenber die serielle Schnittstelle ausgegeben werden?
-	#define DEBUG DEBUG_MED_INFO
+	#define DEBUG DEBUG_ERROR
 
 	// BasicAuth config
 	#define WWW_USERNAME "admin"
@@ -70,7 +70,8 @@
 
 	struct PMmeas {
 		SensorSt		status;		// Sensor initialized and started
-		int32_t 		count; 			// number of measurements in accumulator
+		uint32_t 		count; 		// number of measurements in accumulator
+		uint32_t 		CRCerr;		// number of CRC errors
 		struct measure 	pm010;
 		struct measure 	pm025;
 		struct measure 	pm100;
