@@ -63,18 +63,41 @@
 	};
 
 	struct measure {
-		int 	max;
-		int 	min;
-		int32_t sum;
+		float 	max;
+		float 	min;
+		float 	sum;
+	};
+	struct measureArchive {
+		float 	max[200];
+		float 	min[200];
+		float 	avg[200];
 	};
 
-	struct PMmeas {
-		SensorSt		status;		// Sensor initialized and started
+	// Single sensor measurements object
+	class PMmeas {
+
+	private:
 		uint32_t 		count; 		// number of measurements in accumulator
 		uint32_t 		CRCerr;		// number of CRC errors
+
 		struct measure 	pm010;
 		struct measure 	pm025;
 		struct measure 	pm100;
+
+	public:
+		SensorSt		status;		// Sensor initialized and started
+		float			CRCerrRate = 0.0;	// Rate of CRC errors
+
+		struct measureArchive 	ArchPm010;
+		struct measureArchive 	ArchPm025;
+		struct measureArchive 	ArchPm100;
+
+		void NewMeas(float inPm010, float inPm025, float inPm100); // Add new measurement to accumulator
+		void ArchPush();	// Push measured values to archive
+		void CRCError();	// Increase CRC error counter
+		void PrintDebug();	// Print serial debug information
+		void Init();	// Print serial debug information
+
 	};
 
 

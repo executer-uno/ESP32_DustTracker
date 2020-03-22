@@ -41,21 +41,8 @@ bool BUT_A_PRESS=false;
 bool BUT_B_PRESS=false;
 bool BUT_C_PRESS=false;
 
-struct {
-	SensorSt		status;		// Sensor initialized and started
-	uint32_t 		count; 		// number of measurements in accumulator
-	uint32_t 		CRCerr;		// number of CRC errors
-	struct measure 	pm025;
-	struct measure 	pm100;
-} SDSmeas;
-struct {
-	SensorSt		status;		// Sensor initialized and started
-	uint32_t 		count; 		// number of measurements in accumulator
-	uint32_t 		CRCerr;		// number of CRC errors
-	struct measure 	pm010;
-	struct measure 	pm025;
-	struct measure 	pm100;
-} PMSmeas;
+struct PMmeas SDSmeas;
+struct PMmeas PMSmeas;
 
 // define two tasks for Blink & AnalogRead
 void TaskBlink( void *pvParameters );
@@ -63,6 +50,163 @@ void TaskReadPMSensors( void *pvParameters );
 void TaskDiagLevel( void *pvParameters );
 void TaskKeyboard( void *pvParameters );
 
+void PMmeas::NewMeas(float inPm010, float inPm025, float inPm100){
+
+	this->pm010.sum += inPm010;
+	this->pm025.sum += inPm025;
+	this->pm100.sum += inPm100;
+
+	this->pm010.max = (this->pm010.max < inPm010 ? inPm010 : this->pm010.max);
+	this->pm025.max = (this->pm025.max < inPm025 ? inPm025 : this->pm025.max);
+	this->pm100.max = (this->pm100.max < inPm100 ? inPm100 : this->pm100.max);
+
+	this->pm010.min = (this->pm010.min > inPm010 ? inPm010 : this->pm010.min);
+	this->pm025.min = (this->pm025.min > inPm025 ? inPm025 : this->pm025.min);
+	this->pm100.min = (this->pm100.min > inPm100 ? inPm100 : this->pm100.min);
+
+	this->count++;
+}
+void PMmeas::CRCError(){
+	this->CRCerr++;
+}
+void PMmeas::ArchPush(){
+
+	// move all older values to archive's end
+	for(int i=200; i>1; i--){
+
+		// Pm 1.0
+		this->ArchPm010.avg[i] = this->ArchPm010.avg[i-1];
+		this->ArchPm010.max[i] = this->ArchPm010.max[i-1];
+		this->ArchPm010.min[i] = this->ArchPm010.min[i-1];
+
+		// Pm 2.5
+		this->ArchPm025.avg[i] = this->ArchPm025.avg[i-1];
+		this->ArchPm025.max[i] = this->ArchPm025.max[i-1];
+		this->ArchPm025.min[i] = this->ArchPm025.min[i-1];
+
+		// Pm 10.0
+		this->ArchPm100.avg[i] = this->ArchPm100.avg[i-1];
+		this->ArchPm100.max[i] = this->ArchPm100.max[i-1];
+		this->ArchPm100.min[i] = this->ArchPm100.min[i-1];
+	}
+
+	// Add fresh measurements
+	// Pm 1.0
+	this->ArchPm010.avg[0] = this->pm010.sum / this->count;
+	this->ArchPm010.max[0] = this->pm010.max;
+	this->ArchPm010.min[0] = this->pm010.min;
+
+	// Pm 2.5
+	this->ArchPm025.avg[0] = this->pm025.sum / this->count;
+	this->ArchPm025.max[0] = this->pm025.max;
+	this->ArchPm025.min[0] = this->pm025.min;
+
+	// Pm 10.0
+	this->ArchPm100.avg[0] = this->pm100.sum / this->count;
+	this->ArchPm100.max[0] = this->pm100.max;
+	this->ArchPm100.min[0] = this->pm100.min;
+
+	// CRC errors
+
+	this->CRCerrRate += this->CRCerr / this->count;
+	this->CRCerrRate /= 2;
+
+	// prepare for next measurements
+	this->CRCerr =0;
+	this->count  =0;
+
+	this->pm010.sum = 0.0;
+	this->pm010.max = 0.0;
+	this->pm010.min = 999999999.9;
+
+	this->pm025.sum = 0.0;
+	this->pm025.max = 0.0;
+	this->pm025.min = 999999999.9;
+
+	this->pm100.sum = 0.0;
+	this->pm100.max = 0.0;
+	this->pm100.min = 999999999.9;
+
+}
+void PMmeas::Init(){
+
+	this->status	= SensorSt::raw;
+
+	this->CRCerr 	= 0;
+	this->count  	= 0;
+
+	this->pm010.sum = -1.0;
+	this->pm010.max = -1.0;
+	this->pm010.min = 999999999.9;
+
+	this->pm025.sum = -1.0;
+	this->pm025.max = -1.0;
+	this->pm025.min = 999999999.9;
+
+	this->pm100.sum = -1.0;
+	this->pm100.max = -1.0;
+	this->pm100.min = 999999999.9;
+
+	// init all values of archive
+	for(int i=0; i<200; i++){
+
+		// Pm 1.0
+		this->ArchPm010.avg[i] = -1.0;
+		this->ArchPm010.max[i] = -1.0;
+		this->ArchPm010.min[i] = -1.0;
+
+		// Pm 2.5
+		this->ArchPm025.avg[i] = -1.0;
+		this->ArchPm025.max[i] = -1.0;
+		this->ArchPm025.min[i] = -1.0;
+
+		// Pm 10.0
+		this->ArchPm100.avg[i] = -1.0;
+		this->ArchPm100.max[i] = -1.0;
+		this->ArchPm100.min[i] = -1.0;
+	}
+}
+
+void PMmeas::PrintDebug(){
+
+	if(this->count){
+		String strDebug = "";
+
+		if(cfg::debug <= DEBUG_MIN_INFO ){
+
+			if(this->pm100.sum > 0.0){
+				strDebug  = "PM10.0=" + Float2String(this->pm100.sum / this->count,1 , 7) + ",";
+			}
+			if(this->pm025.sum > 0.0){
+				strDebug += "PM2.5="  + Float2String(this->pm025.sum / this->count,1 , 7) + ",";
+			}
+			if(this->pm010.sum > 0.0){
+				strDebug += "PM1.0="  + Float2String(this->pm010.sum / this->count,1 , 7) + "";
+			}
+			debug_out(strDebug, DEBUG_MIN_INFO, 1);
+		}
+
+		strDebug  = "PM10.0 : [" + 	Float2String(this->pm100.min,1 , 7) + " : ";
+		strDebug += 				Float2String(this->pm100.sum / this->count,1 , 7) + " : ";
+		strDebug += 				Float2String(this->pm100.max,1 , 7) + " ]";
+		debug_out(strDebug, DEBUG_MED_INFO, 1);
+
+		strDebug  = "PM2.5 :  [" + 	Float2String(this->pm025.min,1 , 7) + " : ";
+		strDebug += 				Float2String(this->pm025.sum / this->count,1 , 7) + " : ";
+		strDebug += 				Float2String(this->pm025.max,1 , 7) + " ]";
+		debug_out(strDebug, DEBUG_MED_INFO, 1);
+
+		strDebug  = "PM1.0 :  [" + 	Float2String(this->pm010.min,1 , 7) + " : ";
+		strDebug += 				Float2String(this->pm010.sum / this->count,1 , 7) + " : ";
+		strDebug += 				Float2String(this->pm010.max,1 , 7) + " ]";
+		debug_out(strDebug, DEBUG_MED_INFO, 1);
+
+		debug_out(F("CRC errors rate: "), 									DEBUG_MED_INFO , 0);
+		debug_out(Float2String(this->CRCerr/(this->CRCerr+this->count)),	DEBUG_MED_INFO , 1);
+		debug_out(F("Count: "), 											DEBUG_MED_INFO , 0);
+		debug_out(Float2String(this->count),								DEBUG_MED_INFO , 1);
+	}
+}
 
 // the setup function runs once when you press reset or power the board
 void setup() {
@@ -90,15 +234,8 @@ void setup() {
  	// initialize digital LED_BUILTIN as an output.
 	pinMode(LED_BUILTIN, OUTPUT);
 
-
-	SDSmeas.status 		= SensorSt::raw;
-	PMSmeas.status 		= SensorSt::raw;
-	SDSmeas.pm100.min	= INT_MAX;
-	SDSmeas.pm025.min	= INT_MAX;
-	PMSmeas.pm010.min	= INT_MAX;
-	PMSmeas.pm025.min	= INT_MAX;
-	PMSmeas.pm100.min	= INT_MAX;
-
+	SDSmeas.Init();
+	PMSmeas.Init();
 
   // Now set up two tasks to run independently.
   xTaskCreatePinnedToCore(
@@ -164,11 +301,11 @@ void TaskBlink(void *pvParameters)  // This is a task.
   for (;;) // A Task shall never return or exit.
   {
     digitalWrite(LED_BUILTIN, HIGH);   // turn the LED on (HIGH is the voltage level)
-    vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
+    vTaskDelay(50);  // one tick delay (1ms) in between reads for stability
     digitalWrite(LED_BUILTIN, LOW);    // turn the LED off by making the voltage LOW
 
     if(cfg::debug == debugPrev){
-    	vTaskDelay(900);  // one tick delay (1ms) in between reads for stability
+    	vTaskDelay(950);  // one tick delay (1ms) in between reads for stability
     }
     else{
     	debugPrev = cfg::debug;
@@ -222,32 +359,8 @@ void TaskKeyboard(void *pvParameters)  // This is a task.
 
 		// Reset counters
 
-		SDSmeas.pm100.min	= INT_MAX;
-		SDSmeas.pm025.min	= INT_MAX;
-
-		PMSmeas.pm010.min	= INT_MAX;
-		PMSmeas.pm025.min	= INT_MAX;
-		PMSmeas.pm100.min	= INT_MAX;
-
-		SDSmeas.pm100.max	= 0;
-		SDSmeas.pm025.max	= 0;
-
-		PMSmeas.pm010.max	= 0;
-		PMSmeas.pm025.max	= 0;
-		PMSmeas.pm100.max	= 0;
-
-		SDSmeas.pm100.sum	= 0;
-		SDSmeas.pm025.sum	= 0;
-
-		PMSmeas.pm010.sum	= 0;
-		PMSmeas.pm025.sum	= 0;
-		PMSmeas.pm100.sum	= 0;
-
-		PMSmeas.CRCerr		= 0;
-		SDSmeas.CRCerr		= 0;
-
-		SDSmeas.count		= 0;
-		PMSmeas.count		= 0;
+		SDSmeas.ArchPush();
+		PMSmeas.ArchPush();
 
 	}
 
@@ -284,6 +397,7 @@ void TaskReadPMSensors(void *pvParameters)  // This is a task.
 	sensorPMS();
     vTaskDelay(400);  // one tick delay (1ms) in between reads for stability
     sensorSDS();
+	debug_out(F(""), DEBUG_MIN_INFO, 1);
     vTaskDelay(400);  // one tick delay (1ms) in between reads for stability
   }
 }
@@ -380,14 +494,16 @@ static void PMS_cmd(PmSensorCmd cmd) {//static
  * read SDS011 sensor values																		 *
  *****************************************************************/
 void sensorSDS() {
-	String strDebug = "";
 	char buffer;
 	int value;
 	int len = 0;
-	int pm10_serial = 0;
-	int pm25_serial = 0;
+	int pm100_serial = 0;	// 10x PM 10.0
+	int pm025_serial = 0;	// 10x PM 2.5
 	int checksum_is = 0;
 	int checksum_ok = 0;
+
+	// https://nettigo.pl/attachments/415
+	// Sensor protocol
 
 	debug_out(String(FPSTR(DBG_TXT_START_READING)) + FPSTR(SENSORS_SDS011), DEBUG_MED_INFO, 1);
 
@@ -418,17 +534,17 @@ void sensorSDS() {
 				};
 				break;
 			case (2):
-				pm25_serial = value;
+				pm025_serial = value;
 				checksum_is = value;
 				break;
 			case (3):
-				pm25_serial += (value << 8);
+				pm025_serial += (value << 8);
 				break;
 			case (4):
-				pm10_serial = value;
+				pm100_serial = value;
 				break;
 			case (5):
-				pm10_serial += (value << 8);
+				pm100_serial += (value << 8);
 				break;
 			case (8):
 
@@ -441,7 +557,7 @@ void sensorSDS() {
 					checksum_ok = 1;
 				} else {
 					len = -1;
-					SDSmeas.CRCerr++;
+					SDSmeas.CRCError();
 				};
 				break;
 			case (9):
@@ -455,48 +571,17 @@ void sensorSDS() {
 
 			// Telegram received
 			if (len == 10 && checksum_ok == 1 ) {
-				if ((! isnan(pm10_serial)) && (! isnan(pm25_serial))) {
+				if ((! isnan(pm100_serial)) && (! isnan(pm025_serial))) {
 
-					SDSmeas.pm100.sum += pm10_serial;
-					SDSmeas.pm025.sum += pm25_serial;
+					SDSmeas.NewMeas(-0.1, (float)pm025_serial/10.0, (float)pm100_serial/10.0);
 
-
-					SDSmeas.pm100.max = (SDSmeas.pm100.max<pm10_serial ? pm10_serial : SDSmeas.pm100.max);
-					SDSmeas.pm025.max = (SDSmeas.pm025.max<pm25_serial ? pm25_serial : SDSmeas.pm025.max);
-
-					SDSmeas.pm100.min = (SDSmeas.pm100.min>pm10_serial ? pm10_serial : SDSmeas.pm100.min);
-					SDSmeas.pm025.min = (SDSmeas.pm025.min>pm25_serial ? pm25_serial : SDSmeas.pm025.min);
-
-					SDSmeas.count++;
-
-					// Debug:
-					if(cfg::debug <= DEBUG_MIN_INFO ){
-						strDebug  = "PM10=" + Float2String(double(SDSmeas.pm100.sum) / (10* SDSmeas.count)) + ",";
-						strDebug += String("         ").substring(1, 13 - strDebug.length());
-						strDebug +=  "PM2=" + Float2String(double(SDSmeas.pm025.sum) / (10* SDSmeas.count)) + "";
-						debug_out(strDebug, DEBUG_MIN_INFO, 1);
-					}
-
-					strDebug  = "PM10.0 : [" + Float2String(double(SDSmeas.pm100.min) / 10) + " : ";
-					strDebug += Float2String(double(SDSmeas.pm100.sum) / (10* SDSmeas.count)) + " : ";
-					strDebug += Float2String(double(SDSmeas.pm100.max) / 10) + " ]";
-					debug_out(strDebug, DEBUG_MED_INFO, 1);
-
-					strDebug  = "PM2.5 : [" + Float2String(double(SDSmeas.pm025.min) / 10) + " : ";
-					strDebug += Float2String(double(SDSmeas.pm025.sum) / (10* SDSmeas.count)) + " : ";
-					strDebug += Float2String(double(SDSmeas.pm025.max) / 10) + " ]";
-					debug_out(strDebug, DEBUG_MED_INFO, 1);
-
-					debug_out(F("CRC errors rate: "), 										DEBUG_MED_INFO , 0);
-					debug_out(Float2String(SDSmeas.CRCerr/(SDSmeas.CRCerr+SDSmeas.count)),	DEBUG_MED_INFO , 1);
-					debug_out(F("Count: "), 												DEBUG_MED_INFO , 0);
-					debug_out(Float2String(SDSmeas.count),									DEBUG_MED_INFO , 1);
+					SDSmeas.PrintDebug();
 
 				}
 				len = 0;
 				checksum_ok = 0;
-				pm10_serial = 0.0;
-				pm25_serial = 0.0;
+				pm100_serial = 0.0;
+				pm025_serial = 0.0;
 				checksum_is = 0;
 			}
 		}
@@ -507,17 +592,25 @@ void sensorSDS() {
  * read Plantronic PM sensor sensor values											 *
  *****************************************************************/
 void sensorPMS() {
-	String strDebug = "";
 	char buffer;
 	int value;
 	int len = 0;
-	int pm1_serial = 0;
-	int pm10_serial = 0;
-	int pm25_serial = 0;
+	int pm010_serial = 0;	// PM1.0 (ug/m3)
+	int pm025_serial = 0;	// PM2.5
+	int pm100_serial = 0;	// PM10.0
+
+	int TSI_pm010_serial = 0;	// PM1.0
+	int TSI_pm025_serial = 0;	// PM2.5
+	int TSI_pm100_serial = 0;	// PM10.0
+
 	int checksum_is = 0;
 	int checksum_should = 0;
 	int checksum_ok = 0;
-	int frame_len = 24;				// min. frame length
+	int frame_len   = 24;	// minimum frame length
+
+	// https://github.com/avaldebe/AQmon/blob/master/Documents/PMS3003_LOGOELE.pdf
+	// http://download.kamami.pl/p563980-PMS3003%20series%20data%20manual_English_V2.5.pdf
+	// Sensor protocol
 
 	if((PMSmeas.status == SensorSt::raw) && (millis() > 10000ULL)) {
 		PMS_cmd(PmSensorCmd::Start);
@@ -554,24 +647,48 @@ void sensorPMS() {
 			case (3):
 				frame_len = value + 4;
 				break;
+
+			// TSI Values
+			case (4):
+				TSI_pm010_serial += ( value << 8);
+				break;
+			case (5):
+				TSI_pm010_serial += value;
+				break;
+			case (6):
+				TSI_pm025_serial = ( value << 8);
+				break;
+			case (7):
+				TSI_pm025_serial += value;
+				break;
+			case (8):
+				TSI_pm100_serial = ( value << 8);
+				break;
+			case (9):
+				TSI_pm100_serial += value;
+				break;
+
+			// Standard atmosphere values
 			case (10):
-				pm1_serial += ( value << 8);
+				pm010_serial += ( value << 8);
 				break;
 			case (11):
-				pm1_serial += value;
+				pm010_serial += value;
 				break;
 			case (12):
-				pm25_serial = ( value << 8);
+				pm025_serial = ( value << 8);
 				break;
 			case (13):
-				pm25_serial += value;
+				pm025_serial += value;
 				break;
 			case (14):
-				pm10_serial = ( value << 8);
+				pm100_serial = ( value << 8);
 				break;
 			case (15):
-				pm10_serial += value;
+				pm100_serial += value;
 				break;
+
+
 			case (22):
 				if (frame_len == 24) {
 					checksum_should = ( value << 8 );
@@ -602,69 +719,27 @@ void sensorPMS() {
 					checksum_ok = 1;
 				} else {
 					len = 0;
-					PMSmeas.CRCerr++;
+					PMSmeas.CRCError();
 				};
 
 				// Telegram received
 				if (checksum_ok == 1) {
-					if ((! isnan(pm1_serial)) && (! isnan(pm10_serial)) && (! isnan(pm25_serial))) {
+					if ((! isnan(pm100_serial)) && (! isnan(pm010_serial)) && (! isnan(pm025_serial))) {
 
-						pm10_serial	*= 10;		// to make maths same with SDS
-						pm25_serial	*= 10;
-						pm1_serial	*= 10;
-
-						PMSmeas.pm010.sum += pm10_serial;
-						PMSmeas.pm025.sum += pm25_serial;
-						PMSmeas.pm100.sum += pm1_serial;
-
-						PMSmeas.pm010.max = (PMSmeas.pm010.max<pm10_serial ? pm10_serial : PMSmeas.pm010.max);
-						PMSmeas.pm025.max = (PMSmeas.pm025.max<pm25_serial ? pm25_serial : PMSmeas.pm025.max);
-						PMSmeas.pm100.max = (PMSmeas.pm100.max<pm25_serial ? pm1_serial  : PMSmeas.pm100.max);
-
-						PMSmeas.pm010.min = (PMSmeas.pm010.min>pm10_serial ? pm10_serial : PMSmeas.pm010.min);
-						PMSmeas.pm025.min = (PMSmeas.pm025.min>pm25_serial ? pm25_serial : PMSmeas.pm025.min);
-						PMSmeas.pm100.min = (PMSmeas.pm100.min>pm25_serial ? pm1_serial  : PMSmeas.pm100.min);
-
-						PMSmeas.count++;
-
-						// Debug:
-						if(cfg::debug <= DEBUG_MIN_INFO ){
-							strDebug  = "PM10=" + Float2String(double(PMSmeas.pm100.sum) / (10* PMSmeas.count)) + ",";
-							strDebug += String("         ").substring(1, 13 - strDebug.length());
-							strDebug += "PM2=" + Float2String(double(PMSmeas.pm025.sum) / (10* PMSmeas.count)) + ",";
-							strDebug += String("         ").substring(1, 25 - strDebug.length());
-							strDebug += "PM1=" + Float2String(double(PMSmeas.pm010.sum) / (10* PMSmeas.count)) + "";
-							debug_out(strDebug, DEBUG_MIN_INFO, 1);
-						}
-
-						strDebug  = "PM10.0 : [" + Float2String(double(PMSmeas.pm100.min) / 10) + " : ";
-						strDebug += Float2String(double(PMSmeas.pm100.sum) / (10* PMSmeas.count)) + " : ";
-						strDebug += Float2String(double(PMSmeas.pm100.max) / 10) + " ]";
-						debug_out(strDebug, DEBUG_MED_INFO, 1);
-
-						strDebug  = "PM2.5 : [" + Float2String(double(PMSmeas.pm025.min) / 10) + " : ";
-						strDebug += Float2String(double(PMSmeas.pm025.sum) / (10* PMSmeas.count)) + " : ";
-						strDebug += Float2String(double(PMSmeas.pm025.max) / 10) + " ]";
-						debug_out(strDebug, DEBUG_MED_INFO, 1);
-
-						strDebug  = "PM1.0 : [" + Float2String(double(PMSmeas.pm010.min) / 10) + " : ";
-						strDebug += Float2String(double(PMSmeas.pm100.sum) / (10* PMSmeas.count)) + " : ";
-						strDebug += Float2String(double(PMSmeas.pm100.max) / 10) + " ]";
-						debug_out(strDebug, DEBUG_MED_INFO, 1);
-
-						debug_out(F("CRC errors rate: "), 										DEBUG_MED_INFO , 0);
-						debug_out(Float2String(PMSmeas.CRCerr/(PMSmeas.CRCerr+PMSmeas.count)),	DEBUG_MED_INFO , 1);
-						debug_out(F("Count: "), 												DEBUG_MED_INFO , 0);
-						debug_out(Float2String(PMSmeas.count),									DEBUG_MED_INFO , 1);
-
-
+						PMSmeas.NewMeas((float)pm010_serial, (float)pm025_serial, (float)pm100_serial);
+						PMSmeas.PrintDebug();
 
 					}
 					len = 0;
 					checksum_ok = 0;
-					pm1_serial = 0.0;
-					pm10_serial = 0.0;
-					pm25_serial = 0.0;
+					pm100_serial = 0.0;
+					pm010_serial = 0.0;
+					pm025_serial = 0.0;
+
+					TSI_pm100_serial = 0.0;
+					TSI_pm010_serial = 0.0;
+					TSI_pm025_serial = 0.0;
+
 					checksum_is = 0;
 				}
 			}
@@ -690,5 +765,14 @@ String Float2String(const double value, uint8_t digits) {
 	dtostrf(value, 13, digits, temp);
 	String s = temp;
 	s.trim();
+	return s;
+}
+
+String Float2String(const double value, uint8_t digits, uint8_t size) {
+
+	String s = Float2String(value, digits);
+
+	s = String("               ").substring(1, size - s.length()) + s;
+
 	return s;
 }
