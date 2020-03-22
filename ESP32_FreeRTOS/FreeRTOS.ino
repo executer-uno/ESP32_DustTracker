@@ -49,6 +49,8 @@ void TaskBlink( void *pvParameters );
 void TaskReadPMSensors( void *pvParameters );
 void TaskDiagLevel( void *pvParameters );
 void TaskKeyboard( void *pvParameters );
+void ArchiveMeasures( void *pvParameters );
+
 
 void PMmeas::NewMeas(float inPm010, float inPm025, float inPm100){
 
@@ -166,7 +168,6 @@ void PMmeas::Init(){
 		this->ArchPm100.min[i] = -1.0;
 	}
 }
-
 void PMmeas::PrintDebug(){
 
 	if(this->count > 1){
@@ -273,6 +274,16 @@ void setup() {
     ,  2  // Priority
     ,  NULL
     ,  ARDUINO_RUNNING_CORE);
+
+  xTaskCreatePinnedToCore(
+	ArchiveMeasures
+    ,  "CyclicArcive"
+    ,  1024  // Stack size
+    ,  NULL
+    ,  2  // Priority
+    ,  NULL
+    ,  ARDUINO_RUNNING_CORE);
+
   // Now the task scheduler, which takes over control of scheduling individual tasks, is automatically started.
 }
 
@@ -342,6 +353,23 @@ void TaskDiagLevel(void *pvParameters)  // This is a task.
   }
 }
 
+
+void ArchiveMeasures(void *pvParameters)  // This is a task.
+{
+  (void) pvParameters;
+
+  debug_out(F("ARCH:"), DEBUG_MIN_INFO, 1);
+  SDSmeas.PrintDebug();
+  PMSmeas.PrintDebug();
+
+  SDSmeas.ArchPush();
+  PMSmeas.ArchPush();
+
+  vTaskDelay(10000);  // one tick delay (1ms) in between reads for stability
+
+}
+
+
 void TaskKeyboard(void *pvParameters)  // This is a task.
 {
   (void) pvParameters;
@@ -356,12 +384,6 @@ void TaskKeyboard(void *pvParameters)  // This is a task.
 	if (BUT_A && !BUT_A_PRESS)
 	{
 		debug_out(F("Button A"), DEBUG_MIN_INFO, 1);
-
-		// Reset counters
-
-		SDSmeas.ArchPush();
-		PMSmeas.ArchPush();
-
 	}
 
 	if (BUT_B && !BUT_B_PRESS)
@@ -397,7 +419,6 @@ void TaskReadPMSensors(void *pvParameters)  // This is a task.
 	sensorPMS();
     vTaskDelay(400);  // one tick delay (1ms) in between reads for stability
     sensorSDS();
-	debug_out(F(""), DEBUG_MIN_INFO, 1);
     vTaskDelay(400);  // one tick delay (1ms) in between reads for stability
   }
 }
@@ -575,8 +596,6 @@ void sensorSDS() {
 
 					SDSmeas.NewMeas(-0.1, (float)pm025_serial/10.0, (float)pm100_serial/10.0);
 
-					SDSmeas.PrintDebug();
-
 				}
 				len = 0;
 				checksum_ok = 0;
@@ -727,7 +746,6 @@ void sensorPMS() {
 					if ((! isnan(pm100_serial)) && (! isnan(pm010_serial)) && (! isnan(pm025_serial))) {
 
 						PMSmeas.NewMeas((float)pm010_serial, (float)pm025_serial, (float)pm100_serial);
-						PMSmeas.PrintDebug();
 
 					}
 					len = 0;
