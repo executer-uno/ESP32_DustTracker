@@ -51,8 +51,9 @@ void TaskDiagLevel( void *pvParameters );
 void TaskKeyboard( void *pvParameters );
 void ArchiveMeasures( void *pvParameters );
 
-
 void PMmeas::NewMeas(float inPm010, float inPm025, float inPm100){
+
+	xSemaphoreTake(meas_mutex, portMAX_DELAY);
 
 	this->pm010.sum += inPm010;
 	this->pm025.sum += inPm025;
@@ -67,69 +68,85 @@ void PMmeas::NewMeas(float inPm010, float inPm025, float inPm100){
 	this->pm100.min = (this->pm100.min > inPm100 ? inPm100 : this->pm100.min);
 
 	this->count++;
+
+	xSemaphoreGive(meas_mutex);
+
 }
 void PMmeas::CRCError(){
 	this->CRCerr++;
 }
 void PMmeas::ArchPush(){
 
-	// move all older values to archive's end
-	for(int i=200; i>1; i--){
+	if(this->count > 0){
 
+		// move all older values to archive's end
+		for(int i=200; i>1; i--){
+
+			// Pm 1.0
+			this->ArchPm010.avg[i] = this->ArchPm010.avg[i-1];
+			this->ArchPm010.max[i] = this->ArchPm010.max[i-1];
+			this->ArchPm010.min[i] = this->ArchPm010.min[i-1];
+
+			// Pm 2.5
+			this->ArchPm025.avg[i] = this->ArchPm025.avg[i-1];
+			this->ArchPm025.max[i] = this->ArchPm025.max[i-1];
+			this->ArchPm025.min[i] = this->ArchPm025.min[i-1];
+
+			// Pm 10.0
+			this->ArchPm100.avg[i] = this->ArchPm100.avg[i-1];
+			this->ArchPm100.max[i] = this->ArchPm100.max[i-1];
+			this->ArchPm100.min[i] = this->ArchPm100.min[i-1];
+		}
+
+		xSemaphoreTake(meas_mutex, portMAX_DELAY);
+
+		// Add fresh measurements
 		// Pm 1.0
-		this->ArchPm010.avg[i] = this->ArchPm010.avg[i-1];
-		this->ArchPm010.max[i] = this->ArchPm010.max[i-1];
-		this->ArchPm010.min[i] = this->ArchPm010.min[i-1];
+		this->ArchPm010.avg[0] = this->pm010.sum / this->count;
+		this->ArchPm010.max[0] = this->pm010.max;
+		this->ArchPm010.min[0] = this->pm010.min;
 
 		// Pm 2.5
-		this->ArchPm025.avg[i] = this->ArchPm025.avg[i-1];
-		this->ArchPm025.max[i] = this->ArchPm025.max[i-1];
-		this->ArchPm025.min[i] = this->ArchPm025.min[i-1];
+		this->ArchPm025.avg[0] = this->pm025.sum / this->count;
+		this->ArchPm025.max[0] = this->pm025.max;
+		this->ArchPm025.min[0] = this->pm025.min;
 
 		// Pm 10.0
-		this->ArchPm100.avg[i] = this->ArchPm100.avg[i-1];
-		this->ArchPm100.max[i] = this->ArchPm100.max[i-1];
-		this->ArchPm100.min[i] = this->ArchPm100.min[i-1];
+		this->ArchPm100.avg[0] = this->pm100.sum / this->count;
+		this->ArchPm100.max[0] = this->pm100.max;
+		this->ArchPm100.min[0] = this->pm100.min;
+
+		// CRC errors
+
+		this->CRCerrRate += (float) this->CRCerr / (float) this->count;
+		this->CRCerrRate /= 2.0;
+
+		xSemaphoreGive(meas_mutex);
+
 	}
 
-	// Add fresh measurements
-	// Pm 1.0
-	this->ArchPm010.avg[0] = this->pm010.sum / this->count;
-	this->ArchPm010.max[0] = this->pm010.max;
-	this->ArchPm010.min[0] = this->pm010.min;
-
-	// Pm 2.5
-	this->ArchPm025.avg[0] = this->pm025.sum / this->count;
-	this->ArchPm025.max[0] = this->pm025.max;
-	this->ArchPm025.min[0] = this->pm025.min;
-
-	// Pm 10.0
-	this->ArchPm100.avg[0] = this->pm100.sum / this->count;
-	this->ArchPm100.max[0] = this->pm100.max;
-	this->ArchPm100.min[0] = this->pm100.min;
-
-	// CRC errors
-
-	this->CRCerrRate += this->CRCerr / this->count;
-	this->CRCerrRate /= 2;
+	xSemaphoreTake(meas_mutex, portMAX_DELAY);
 
 	// prepare for next measurements
 	this->CRCerr =0;
 	this->count  =0;
 
-	this->pm010.sum = -1.0;
+	this->pm010.sum = 0.0;
 	this->pm010.max = -1.0;
 	this->pm010.min = 999999999.9;
 
-	this->pm025.sum = -1.0;
+	this->pm025.sum = 0.0;
 	this->pm025.max = -1.0;
 	this->pm025.min = 999999999.9;
 
-	this->pm100.sum = -1.0;
+	this->pm100.sum = 0.0;
 	this->pm100.max = -1.0;
 	this->pm100.min = 999999999.9;
 
+	xSemaphoreGive(meas_mutex);
+
 }
+
 void PMmeas::Init(){
 
 	this->status	= SensorSt::raw;
@@ -137,15 +154,15 @@ void PMmeas::Init(){
 	this->CRCerr 	= 0;
 	this->count  	= 0;
 
-	this->pm010.sum = -1.0;
+	this->pm010.sum = 0.0;
 	this->pm010.max = -1.0;
 	this->pm010.min = 999999999.9;
 
-	this->pm025.sum = -1.0;
+	this->pm025.sum = 0.0;
 	this->pm025.max = -1.0;
 	this->pm025.min = 999999999.9;
 
-	this->pm100.sum = -1.0;
+	this->pm100.sum = 0.0;
 	this->pm100.max = -1.0;
 	this->pm100.min = 999999999.9;
 
@@ -167,10 +184,12 @@ void PMmeas::Init(){
 		this->ArchPm100.max[i] = -1.0;
 		this->ArchPm100.min[i] = -1.0;
 	}
+
+	meas_mutex = xSemaphoreCreateMutex();
 }
 void PMmeas::PrintDebug(){
 
-	if(this->count > 1){
+	if(this->count > 0){
 		String strDebug = "";
 
 		if(cfg::debug <= DEBUG_MIN_INFO ){
@@ -188,24 +207,24 @@ void PMmeas::PrintDebug(){
 		}
 
 		strDebug  = "PM10.0 : [" + 	Float2String(this->pm100.min,1 , 7) + " : ";
-		strDebug += 				Float2String(this->pm100.sum / this->count,1 , 7) + " : ";
+		strDebug += 				Float2String(this->pm100.sum / (float)this->count,1 , 7) + " : ";
 		strDebug += 				Float2String(this->pm100.max,1 , 7) + " ]";
 		debug_out(strDebug, DEBUG_MED_INFO, 1);
 
 		strDebug  = "PM2.5 :  [" + 	Float2String(this->pm025.min,1 , 7) + " : ";
-		strDebug += 				Float2String(this->pm025.sum / this->count,1 , 7) + " : ";
+		strDebug += 				Float2String(this->pm025.sum / (float)this->count,1 , 7) + " : ";
 		strDebug += 				Float2String(this->pm025.max,1 , 7) + " ]";
 		debug_out(strDebug, DEBUG_MED_INFO, 1);
 
 		strDebug  = "PM1.0 :  [" + 	Float2String(this->pm010.min,1 , 7) + " : ";
-		strDebug += 				Float2String(this->pm010.sum / this->count,1 , 7) + " : ";
+		strDebug += 				Float2String(this->pm010.sum / (float)this->count,1 , 7) + " : ";
 		strDebug += 				Float2String(this->pm010.max,1 , 7) + " ]";
 		debug_out(strDebug, DEBUG_MED_INFO, 1);
 
 		debug_out(F("CRC errors rate: "), 									DEBUG_MED_INFO , 0);
-		debug_out(Float2String(this->CRCerr/(this->CRCerr+this->count)),	DEBUG_MED_INFO , 1);
+		debug_out(Float2String(this->CRCerr/(this->CRCerr + this->count)),	DEBUG_MED_INFO , 1);
 		debug_out(F("Count: "), 											DEBUG_MED_INFO , 0);
-		debug_out(Float2String(this->count),								DEBUG_MED_INFO , 1);
+		debug_out(Float2String( (float) this->count),						DEBUG_MED_INFO , 1);
 	}
 }
 
@@ -251,7 +270,16 @@ void setup() {
   xTaskCreatePinnedToCore(
     TaskReadPMSensors
     ,  "ReadSDSPMS"
-    ,  9000  // Stack size
+    ,  4096  // Stack size
+    ,  NULL
+    ,  2  // Priority
+    ,  NULL
+    ,  ARDUINO_RUNNING_CORE);
+
+  xTaskCreatePinnedToCore(
+	TaskDiagLevel
+    ,  "DiagLevel"
+    ,  1024  // Stack size
     ,  NULL
     ,  2  // Priority
     ,  NULL
@@ -267,20 +295,11 @@ void setup() {
     ,  ARDUINO_RUNNING_CORE);
 
   xTaskCreatePinnedToCore(
-	TaskDiagLevel
-    ,  "DiagLevel"
-    ,  1024  // Stack size
-    ,  NULL
-    ,  2  // Priority
-    ,  NULL
-    ,  ARDUINO_RUNNING_CORE);
-
-  xTaskCreatePinnedToCore(
 	ArchiveMeasures
     ,  "CyclicArcive"
-    ,  1024  // Stack size
+    ,  4096  // Stack size
     ,  NULL
-    ,  2  // Priority
+    ,  1  // Priority
     ,  NULL
     ,  ARDUINO_RUNNING_CORE);
 
@@ -315,13 +334,13 @@ void TaskBlink(void *pvParameters)  // This is a task.
     vTaskDelay(50);  // one tick delay (1ms) in between reads for stability
     digitalWrite(LED_BUILTIN, LOW);    // turn the LED off by making the voltage LOW
 
-    if(cfg::debug == debugPrev){
+    if(cfg::debug == debugPrev && SDSmeas.status == SensorSt::ok && PMSmeas.status == SensorSt::ok){
     	vTaskDelay(950);  // one tick delay (1ms) in between reads for stability
     }
     else{
-    	debugPrev = cfg::debug;
     	vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
     }
+    debugPrev = cfg::debug;
 
   }
 }
@@ -358,15 +377,18 @@ void ArchiveMeasures(void *pvParameters)  // This is a task.
 {
   (void) pvParameters;
 
-  debug_out(F("ARCH:"), DEBUG_MIN_INFO, 1);
-  SDSmeas.PrintDebug();
-  PMSmeas.PrintDebug();
+  for (;;) // A Task shall never return or exit.
+  {
 
-  SDSmeas.ArchPush();
-  PMSmeas.ArchPush();
+	  if(SDSmeas.status == SensorSt::ok && PMSmeas.status == SensorSt::ok){
+		  vTaskDelay(10000);  // one tick delay (1ms) in between reads for stability
 
-  vTaskDelay(10000);  // one tick delay (1ms) in between reads for stability
+		  debug_out(F("ARCH"), DEBUG_MIN_INFO, 1);
 
+		  //SDSmeas.ArchPush();
+		  //PMSmeas.ArchPush();
+	  }
+  }
 }
 
 
@@ -420,6 +442,7 @@ void TaskReadPMSensors(void *pvParameters)  // This is a task.
     vTaskDelay(400);  // one tick delay (1ms) in between reads for stability
     sensorSDS();
     vTaskDelay(400);  // one tick delay (1ms) in between reads for stability
+
   }
 }
 
@@ -594,7 +617,15 @@ void sensorSDS() {
 			if (len == 10 && checksum_ok == 1 ) {
 				if ((! isnan(pm100_serial)) && (! isnan(pm025_serial))) {
 
-					SDSmeas.NewMeas(-0.1, (float)pm025_serial/10.0, (float)pm100_serial/10.0);
+					SDSmeas.status = SensorSt::ok;
+
+					debug_out(F("Values: PM2.5, P10.0:"), 		DEBUG_MAX_INFO, 0);
+					debug_out(Float2String(pm025_serial, 1, 6) ,DEBUG_MAX_INFO, 0);
+					debug_out(Float2String(pm100_serial, 1, 6) ,DEBUG_MAX_INFO, 1);
+
+					SDSmeas.NewMeas((float)0.0, ((float)pm025_serial)/10.0, ((float)pm100_serial)/10.0);
+
+					SDSmeas.PrintDebug();
 
 				}
 				len = 0;
@@ -745,7 +776,16 @@ void sensorPMS() {
 				if (checksum_ok == 1) {
 					if ((! isnan(pm100_serial)) && (! isnan(pm010_serial)) && (! isnan(pm025_serial))) {
 
+						PMSmeas.status = SensorSt::ok;
+
+						debug_out(F("Values: PM1.0, PM2.5, P10.0:"), 		DEBUG_MAX_INFO, 0);
+						debug_out(Float2String(pm010_serial, 1, 6) ,DEBUG_MAX_INFO, 0);
+						debug_out(Float2String(pm025_serial, 1, 6) ,DEBUG_MAX_INFO, 0);
+						debug_out(Float2String(pm100_serial, 1, 6) ,DEBUG_MAX_INFO, 1);
+
 						PMSmeas.NewMeas((float)pm010_serial, (float)pm025_serial, (float)pm100_serial);
+
+						PMSmeas.PrintDebug();
 
 					}
 					len = 0;
@@ -790,7 +830,7 @@ String Float2String(const double value, uint8_t digits, uint8_t size) {
 
 	String s = Float2String(value, digits);
 
-	s = String("               ").substring(1, size - s.length()) + s;
+	s = String("               ").substring(1, size - s.length() +1 ) + s;
 
 	return s;
 }

@@ -84,6 +84,8 @@
 		struct measure 	pm025;
 		struct measure 	pm100;
 
+		SemaphoreHandle_t meas_mutex;	// Mutex to access to pm010,pm025,pm100 accumulators
+
 	public:
 		SensorSt		status;		// Sensor initialized and started
 		float			CRCerrRate = 0.0;	// Rate of CRC errors
