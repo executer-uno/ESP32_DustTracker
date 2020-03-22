@@ -115,16 +115,16 @@ void PMmeas::ArchPush(){
 	this->CRCerr =0;
 	this->count  =0;
 
-	this->pm010.sum = 0.0;
-	this->pm010.max = 0.0;
+	this->pm010.sum = -1.0;
+	this->pm010.max = -1.0;
 	this->pm010.min = 999999999.9;
 
-	this->pm025.sum = 0.0;
-	this->pm025.max = 0.0;
+	this->pm025.sum = -1.0;
+	this->pm025.max = -1.0;
 	this->pm025.min = 999999999.9;
 
-	this->pm100.sum = 0.0;
-	this->pm100.max = 0.0;
+	this->pm100.sum = -1.0;
+	this->pm100.max = -1.0;
 	this->pm100.min = 999999999.9;
 
 }
@@ -169,7 +169,7 @@ void PMmeas::Init(){
 
 void PMmeas::PrintDebug(){
 
-	if(this->count){
+	if(this->count > 1){
 		String strDebug = "";
 
 		if(cfg::debug <= DEBUG_MIN_INFO ){
