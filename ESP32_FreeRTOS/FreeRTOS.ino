@@ -72,6 +72,12 @@ void TaskKeyboard( void *pvParameters );
 void TaskArchiveMeas( void *pvParameters );
 void TaskDisplay( void *pvParameters );
 
+UBaseType_t uxHighWaterMark_TaskBlink;
+UBaseType_t uxHighWaterMark_TaskReadPMSensors;
+UBaseType_t uxHighWaterMark_TaskDiagLevel;
+UBaseType_t uxHighWaterMark_TaskKeyboard;
+UBaseType_t uxHighWaterMark_TaskArchiveMeas;
+UBaseType_t uxHighWaterMark_TaskDisplay;
 
 
 template<typename T, std::size_t N> constexpr std::size_t array_num_elements(const T(&)[N]) {
@@ -128,7 +134,7 @@ void setup() {
   xTaskCreatePinnedToCore(
     TaskReadPMSensors
     ,  "ReadSDSPMS"
-    ,  4096  // Stack size
+    ,  2048  // Stack size
     ,  NULL
     ,  2  // Priority
     ,  NULL
@@ -155,7 +161,7 @@ void setup() {
   xTaskCreatePinnedToCore(
 	TaskArchiveMeas
     ,  "CyclicArcive"
-    ,  16384 // Stack size
+    ,  1024 // Stack size
     ,  NULL
     ,  1  // Priority
     ,  NULL
@@ -164,7 +170,7 @@ void setup() {
   xTaskCreatePinnedToCore(
 	TaskDisplay
     ,  "Display"
-    ,  4096  // Stack size
+    ,  2048  // Stack size
     ,  NULL
     ,  1  // Priority
     ,  NULL
@@ -185,7 +191,6 @@ void loop()
 void TaskBlink(void *pvParameters)  // This is a task.
 {
   (void) pvParameters;
-  UBaseType_t uxHighWaterMark;
 
 /*
   Blink
@@ -210,9 +215,7 @@ void TaskBlink(void *pvParameters)  // This is a task.
     }
     debugPrev = cfg::debug;
 
-    uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
-	//debug_out(F("FreeStack TaskBlink = "), DEBUG_MAX_INFO, 0);
-	//debug_out(Float2String((float)uxHighWaterMark), DEBUG_MAX_INFO, 1);
+    uxHighWaterMark_TaskBlink = uxTaskGetStackHighWaterMark( NULL );
   }
 
 }
@@ -220,7 +223,6 @@ void TaskBlink(void *pvParameters)  // This is a task.
 void TaskDiagLevel(void *pvParameters)  // This is a task.
 {
   (void) pvParameters;
-  UBaseType_t uxHighWaterMark;
 
   for (;;) // A Task shall never return or exit.
   {
@@ -241,9 +243,7 @@ void TaskDiagLevel(void *pvParameters)  // This is a task.
 
 		}
     vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
-    uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
-	//debug_out(F("FreeStack TaskDiagLevel = "), DEBUG_MAX_INFO, 0);
-	//debug_out(Float2String((float)uxHighWaterMark), DEBUG_MAX_INFO, 1);
+    uxHighWaterMark_TaskDiagLevel = uxTaskGetStackHighWaterMark( NULL );
   }
 }
 
@@ -251,7 +251,6 @@ void TaskDiagLevel(void *pvParameters)  // This is a task.
 void TaskArchiveMeas(void *pvParameters)  // This is a task.
 {
   (void) pvParameters;
-  UBaseType_t uxHighWaterMark;
 
   for (;;) // A Task shall never return or exit.
   {
@@ -265,16 +264,13 @@ void TaskArchiveMeas(void *pvParameters)  // This is a task.
 		  PMSmeas.ArchPush();
 	  }
 
-      uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
-      //debug_out(F("FreeStack TaskArchiveMeas = "), DEBUG_MAX_INFO, 0);
-      //debug_out(Float2String((float)uxHighWaterMark), DEBUG_MAX_INFO, 1);
+      uxHighWaterMark_TaskArchiveMeas = uxTaskGetStackHighWaterMark( NULL );
   }
 }
 
 void TaskDisplay(void *pvParameters)  // This is a task.
 {
   (void) pvParameters;
-  UBaseType_t uxHighWaterMark;
 
   for (;;) // A Task shall never return or exit.
   {
@@ -287,11 +283,9 @@ void TaskDisplay(void *pvParameters)  // This is a task.
 		  *****************************************************************/
 		  display_values();
 	  #endif
-	  vTaskDelay(5000);  // one tick delay (1ms) in between reads for stability
+	  vTaskDelay(1000);  // one tick delay (1ms) in between reads for stability
 
-      uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
-      //debug_out(F("FreeStack TaskDisplay = "), DEBUG_MAX_INFO, 0);
-      //debug_out(Float2String((float)uxHighWaterMark), DEBUG_MAX_INFO, 1);
+      uxHighWaterMark_TaskDisplay = uxTaskGetStackHighWaterMark( NULL );
   }
 }
 
@@ -299,7 +293,6 @@ void TaskDisplay(void *pvParameters)  // This is a task.
 void TaskKeyboard(void *pvParameters)  // This is a task.
 {
   (void) pvParameters;
-  //UBaseType_t uxHighWaterMark;
 
   for (;;) // A Task shall never return or exit.
   {
@@ -332,9 +325,7 @@ void TaskKeyboard(void *pvParameters)  // This is a task.
 
     vTaskDelay(5);  // one tick delay (1ms) in between reads for stability
 
-    //uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
-	//debug_out(F("FreeStack TaskKeyboard = "), DEBUG_MAX_INFO, 0);
-	//debug_out(Float2String((float)uxHighWaterMark), DEBUG_MAX_INFO, 1);
+    uxHighWaterMark_TaskKeyboard = uxTaskGetStackHighWaterMark( NULL );
   }
 }
 
@@ -342,7 +333,6 @@ void TaskKeyboard(void *pvParameters)  // This is a task.
 void TaskReadPMSensors(void *pvParameters)  // This is a task.
 {
   (void) pvParameters;
-  UBaseType_t uxHighWaterMark;
 
   for (;;)
   {
@@ -351,10 +341,7 @@ void TaskReadPMSensors(void *pvParameters)  // This is a task.
     sensorSDS();
     vTaskDelay(400);  // one tick delay (1ms) in between reads for stability
 
-    uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
-	//debug_out(F("FreeStack TaskReadPMSensors = "), DEBUG_MAX_INFO, 0);
-	//debug_out(Float2String((float)uxHighWaterMark), DEBUG_MAX_INFO, 1);
-
+    uxHighWaterMark_TaskReadPMSensors = uxTaskGetStackHighWaterMark( NULL );
   }
 }
 
@@ -740,7 +727,7 @@ void display_values() {
 		screens[screen_count++] = 4;
 	}
 
-	//screens[screen_count++] = 5;	// Wifi info
+	screens[screen_count++] = 5;	// Wifi info
 	screens[screen_count++] = 6;	// chipID, firmware and count of measurements
 	screens[screen_count++] = 11;	// Trend, GPS, Values
 
@@ -766,11 +753,15 @@ void display_values() {
 		display_lines[2] = "Alt: " + check_display_value(0.0 , -1000.0, 2, 10);
 		break;
 	case (5):
-		display_header = F("Wifi info");
-		display_lines[0] = "";//"IP:      " + WiFi.localIP().toString();
-		display_lines[1] = "";//"SSID:    " + WiFi.SSID();
-		display_lines[2] = "";//"Signal:  " + String(calcWiFiSignalQuality(WiFi.RSSI())) + "%";
+		display_header = F("Info");
 
+		display_lines[0] = check_display_value(uxHighWaterMark_TaskBlink			, 0, 0, 6) + check_display_value(uxHighWaterMark_TaskReadPMSensors	, 0, 0, 6);
+		display_lines[1] = check_display_value(uxHighWaterMark_TaskDiagLevel		, 0, 0, 6) + check_display_value(uxHighWaterMark_TaskKeyboard		, 0, 0, 6);
+		display_lines[2] = check_display_value(uxHighWaterMark_TaskArchiveMeas		, 0, 0, 6) + check_display_value(uxHighWaterMark_TaskDisplay		, 0, 0, 6);
+
+//		display_lines[0] = "";//"IP:      " + WiFi.localIP().toString();
+//		display_lines[1] = "";//"SSID:    " + WiFi.SSID();
+//		display_lines[2] = "";//"Signal:  " + String(calcWiFiSignalQuality(WiFi.RSSI())) + "%";
 		//if (WiFi.status() != WL_CONNECTED) {
 		//	display_lines[2] = "Signal:  NO CONNECTION!";
 		//}
@@ -792,9 +783,9 @@ void display_values() {
 	display.clear();
 	display.displayOn();
 	display.setTextAlignment(TEXT_ALIGN_CENTER);
-	display.drawString(64, 0, display_header);
 
 	if(screens[next_display_count % screen_count] < 10){
+		display.drawString(64, 0, display_header);
 		display.setTextAlignment(TEXT_ALIGN_LEFT);
 		display.drawString(0, 12, display_lines[0]);
 		display.drawString(0, 24, display_lines[1]);
@@ -820,13 +811,17 @@ void display_values() {
 //		}
 	}
 	else{
-		for(int i=0; i<display.getWidth(); i++){
+		for(int i=1; i<display.getWidth(); i++){
 			int16_t Y=0;
 
-			Y = (int16_t)PMSmeas.ArchPm025.avg[i]/2.0;
-			Y = (Y>54 ? 54 : Y);
+			Y = int(PMSmeas.ArchPm025.avg[i]/2);
+
+			Y = 64-18-Y;
+			Y = (Y<1 ? 1 : Y);
 			display.setPixel(i, Y);
+			display.setPixel(i, 64-16);
 		}
+		display.drawString(64, 52, displayGenerateFooter(screen_count));
 	}
 
 
