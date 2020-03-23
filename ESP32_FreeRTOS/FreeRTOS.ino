@@ -51,181 +51,8 @@ void TaskDiagLevel( void *pvParameters );
 void TaskKeyboard( void *pvParameters );
 void ArchiveMeasures( void *pvParameters );
 
-void PMmeas::NewMeas(float inPm010, float inPm025, float inPm100){
-
-	xSemaphoreTake(meas_mutex, portMAX_DELAY);
-
-	this->pm010.sum += inPm010;
-	this->pm025.sum += inPm025;
-	this->pm100.sum += inPm100;
-
-	this->pm010.max = (this->pm010.max < inPm010 ? inPm010 : this->pm010.max);
-	this->pm025.max = (this->pm025.max < inPm025 ? inPm025 : this->pm025.max);
-	this->pm100.max = (this->pm100.max < inPm100 ? inPm100 : this->pm100.max);
-
-	this->pm010.min = (this->pm010.min > inPm010 ? inPm010 : this->pm010.min);
-	this->pm025.min = (this->pm025.min > inPm025 ? inPm025 : this->pm025.min);
-	this->pm100.min = (this->pm100.min > inPm100 ? inPm100 : this->pm100.min);
-
-	this->count++;
-
-	xSemaphoreGive(meas_mutex);
-
-}
-void PMmeas::CRCError(){
-	this->CRCerr++;
-}
-void PMmeas::ArchPush(){
-
-	if(this->count > 0){
-
-		// move all older values to archive's end
-		for(int i=200; i>1; i--){
-
-			// Pm 1.0
-			this->ArchPm010.avg[i] = this->ArchPm010.avg[i-1];
-			this->ArchPm010.max[i] = this->ArchPm010.max[i-1];
-			this->ArchPm010.min[i] = this->ArchPm010.min[i-1];
-
-			// Pm 2.5
-			this->ArchPm025.avg[i] = this->ArchPm025.avg[i-1];
-			this->ArchPm025.max[i] = this->ArchPm025.max[i-1];
-			this->ArchPm025.min[i] = this->ArchPm025.min[i-1];
-
-			// Pm 10.0
-			this->ArchPm100.avg[i] = this->ArchPm100.avg[i-1];
-			this->ArchPm100.max[i] = this->ArchPm100.max[i-1];
-			this->ArchPm100.min[i] = this->ArchPm100.min[i-1];
-		}
-
-		xSemaphoreTake(meas_mutex, portMAX_DELAY);
-
-		// Add fresh measurements
-		// Pm 1.0
-		this->ArchPm010.avg[0] = this->pm010.sum / this->count;
-		this->ArchPm010.max[0] = this->pm010.max;
-		this->ArchPm010.min[0] = this->pm010.min;
-
-		// Pm 2.5
-		this->ArchPm025.avg[0] = this->pm025.sum / this->count;
-		this->ArchPm025.max[0] = this->pm025.max;
-		this->ArchPm025.min[0] = this->pm025.min;
-
-		// Pm 10.0
-		this->ArchPm100.avg[0] = this->pm100.sum / this->count;
-		this->ArchPm100.max[0] = this->pm100.max;
-		this->ArchPm100.min[0] = this->pm100.min;
-
-		// CRC errors
-
-		this->CRCerrRate += (float) this->CRCerr / (float) this->count;
-		this->CRCerrRate /= 2.0;
-
-		xSemaphoreGive(meas_mutex);
-
-	}
-
-	xSemaphoreTake(meas_mutex, portMAX_DELAY);
-
-	// prepare for next measurements
-	this->CRCerr =0;
-	this->count  =0;
-
-	this->pm010.sum = 0.0;
-	this->pm010.max = -1.0;
-	this->pm010.min = 999999999.9;
-
-	this->pm025.sum = 0.0;
-	this->pm025.max = -1.0;
-	this->pm025.min = 999999999.9;
-
-	this->pm100.sum = 0.0;
-	this->pm100.max = -1.0;
-	this->pm100.min = 999999999.9;
-
-	xSemaphoreGive(meas_mutex);
-
-}
-
-void PMmeas::Init(){
-
-	this->status	= SensorSt::raw;
-
-	this->CRCerr 	= 0;
-	this->count  	= 0;
-
-	this->pm010.sum = 0.0;
-	this->pm010.max = -1.0;
-	this->pm010.min = 999999999.9;
-
-	this->pm025.sum = 0.0;
-	this->pm025.max = -1.0;
-	this->pm025.min = 999999999.9;
-
-	this->pm100.sum = 0.0;
-	this->pm100.max = -1.0;
-	this->pm100.min = 999999999.9;
-
-	// init all values of archive
-	for(int i=0; i<200; i++){
-
-		// Pm 1.0
-		this->ArchPm010.avg[i] = -1.0;
-		this->ArchPm010.max[i] = -1.0;
-		this->ArchPm010.min[i] = -1.0;
-
-		// Pm 2.5
-		this->ArchPm025.avg[i] = -1.0;
-		this->ArchPm025.max[i] = -1.0;
-		this->ArchPm025.min[i] = -1.0;
-
-		// Pm 10.0
-		this->ArchPm100.avg[i] = -1.0;
-		this->ArchPm100.max[i] = -1.0;
-		this->ArchPm100.min[i] = -1.0;
-	}
-
-	meas_mutex = xSemaphoreCreateMutex();
-}
-void PMmeas::PrintDebug(){
-
-	if(this->count > 0){
-		String strDebug = "";
-
-		if(cfg::debug <= DEBUG_MIN_INFO ){
-
-			if(this->pm100.sum > 0.0){
-				strDebug  = "PM10.0=" + Float2String(this->pm100.sum / this->count,1 , 7) + ",";
-			}
-			if(this->pm025.sum > 0.0){
-				strDebug += "PM2.5="  + Float2String(this->pm025.sum / this->count,1 , 7) + ",";
-			}
-			if(this->pm010.sum > 0.0){
-				strDebug += "PM1.0="  + Float2String(this->pm010.sum / this->count,1 , 7) + "";
-			}
-			debug_out(strDebug, DEBUG_MIN_INFO, 1);
-		}
-
-		strDebug  = "PM10.0 : [" + 	Float2String(this->pm100.min,1 , 7) + " : ";
-		strDebug += 				Float2String(this->pm100.sum / (float)this->count,1 , 7) + " : ";
-		strDebug += 				Float2String(this->pm100.max,1 , 7) + " ]";
-		debug_out(strDebug, DEBUG_MED_INFO, 1);
-
-		strDebug  = "PM2.5 :  [" + 	Float2String(this->pm025.min,1 , 7) + " : ";
-		strDebug += 				Float2String(this->pm025.sum / (float)this->count,1 , 7) + " : ";
-		strDebug += 				Float2String(this->pm025.max,1 , 7) + " ]";
-		debug_out(strDebug, DEBUG_MED_INFO, 1);
-
-		strDebug  = "PM1.0 :  [" + 	Float2String(this->pm010.min,1 , 7) + " : ";
-		strDebug += 				Float2String(this->pm010.sum / (float)this->count,1 , 7) + " : ";
-		strDebug += 				Float2String(this->pm010.max,1 , 7) + " ]";
-		debug_out(strDebug, DEBUG_MED_INFO, 1);
-
-		debug_out(F("CRC errors rate: "), 									DEBUG_MED_INFO , 0);
-		debug_out(Float2String(this->CRCerr/(this->CRCerr + this->count)),	DEBUG_MED_INFO , 1);
-		debug_out(F("Count: "), 											DEBUG_MED_INFO , 0);
-		debug_out(Float2String( (float) this->count),						DEBUG_MED_INFO , 1);
-	}
+template<typename T, std::size_t N> constexpr std::size_t array_num_elements(const T(&)[N]) {
+	return N;
 }
 
 // the setup function runs once when you press reset or power the board
@@ -448,22 +275,7 @@ void TaskReadPMSensors(void *pvParameters)  // This is a task.
 
 
 
-/*****************************************************************
- * Debug output																									*
- *****************************************************************/
-void debug_out(const String& text, const int level, const bool linebreak) {
-	if (level <= cfg::debug) {
-		if (linebreak) {
-			Serial.println(text);
-		} else {
-			Serial.print(text);
-		}
-	}
-}
 
-template<typename T, std::size_t N> constexpr std::size_t array_num_elements(const T(&)[N]) {
-	return N;
-}
 
 /*****************************************************************
  * send SDS011 command (start, stop, continuous mode, version		*
@@ -808,29 +620,6 @@ void sensorPMS() {
 }
 
 
-/*****************************************************************
- * convert float to string with a      							 *
- * precision of two (or a given number of) decimal places		 *
- *****************************************************************/
-String Float2String(const double value) {
-	return Float2String(value, 2);
-}
 
-String Float2String(const double value, uint8_t digits) {
-	// Convert a float to String with two decimals.
-	char temp[15];
 
-	dtostrf(value, 13, digits, temp);
-	String s = temp;
-	s.trim();
-	return s;
-}
 
-String Float2String(const double value, uint8_t digits, uint8_t size) {
-
-	String s = Float2String(value, digits);
-
-	s = String("               ").substring(1, size - s.length() +1 ) + s;
-
-	return s;
-}

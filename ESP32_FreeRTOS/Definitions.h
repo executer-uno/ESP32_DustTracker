@@ -102,5 +102,11 @@
 
 	};
 
+	String Float2String(const double value);
+	String Float2String(const double value, uint8_t digits);
+	String Float2String(const double value, uint8_t digits, uint8_t size);
+
+
+	void debug_out(const String& text, const int level, const bool linebreak);
 
 #endif /* DEFINITIONS_H_ */
