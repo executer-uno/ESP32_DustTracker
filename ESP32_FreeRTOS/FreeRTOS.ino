@@ -15,6 +15,13 @@
 #include "Definitions.h"
 
 
+#ifdef CFG_LCD
+	#include "oledfont.h"				// avoids including the default Arial font, needs to be included before SSD1306.h
+	#include <SSD1306.h>
+	#include <LiquidCrystal_I2C.h>
+	#include "SSD1306Wire.h"
+#endif
+
 // ***************************** Variables *********************************
 
 BluetoothSerial Serial; 		//Object for Bluetooth
@@ -22,6 +29,13 @@ SoftwareSerial 	SWSerial;
 HardwareSerial 	serialSDS(0);
 HardwareSerial 	serialPMS(1);
 HardwareSerial 	serialGPS(2);
+
+#ifdef CFG_LCD
+	/*****************************************************************
+	 * Display definitions																					 *
+	 *****************************************************************/
+	SSD1306 display(0x3c, I2C_PIN_SDA, I2C_PIN_SCL); // OLED_ADDRESS
+#endif
 
 namespace cfg {
 	char wlanssid[35] 	= WLANSSID;
@@ -33,23 +47,32 @@ namespace cfg {
 	char fs_ssid[33]	= FS_SSID;
 	char fs_pwd[65] 	= FS_PWD;
 	int	debug 			= DEBUG;
+
+	bool sds_read 		= SDS_READ;
+	bool pms_read 		= PMS_READ;
+	bool bme280_read 	= BME280_READ;
+	bool gps_read 		= GPS_READ;
 }
 
 int	debugPrev;
+unsigned long next_display_count = 0;
 
 bool BUT_A_PRESS=false;
 bool BUT_B_PRESS=false;
 bool BUT_C_PRESS=false;
 
-struct PMmeas SDSmeas;
-struct PMmeas PMSmeas;
+PMmeas SDSmeas;
+PMmeas PMSmeas;
 
-// define two tasks for Blink & AnalogRead
+// define tasks
 void TaskBlink( void *pvParameters );
 void TaskReadPMSensors( void *pvParameters );
 void TaskDiagLevel( void *pvParameters );
 void TaskKeyboard( void *pvParameters );
-void ArchiveMeasures( void *pvParameters );
+void TaskArchiveMeas( void *pvParameters );
+void TaskDisplay( void *pvParameters );
+
+
 
 template<typename T, std::size_t N> constexpr std::size_t array_num_elements(const T(&)[N]) {
 	return N;
@@ -83,6 +106,14 @@ void setup() {
 
 	SDSmeas.Init();
 	PMSmeas.Init();
+
+
+	#ifdef CFG_LCD
+		/*****************************************************************
+		 * Init OLED display																						 *
+		 *****************************************************************/
+		display.init();
+	#endif
 
   // Now set up two tasks to run independently.
   xTaskCreatePinnedToCore(
@@ -122,14 +153,22 @@ void setup() {
     ,  ARDUINO_RUNNING_CORE);
 
   xTaskCreatePinnedToCore(
-	ArchiveMeasures
+	TaskArchiveMeas
     ,  "CyclicArcive"
-    ,  4096  // Stack size
+    ,  16384 // Stack size
     ,  NULL
     ,  1  // Priority
     ,  NULL
     ,  ARDUINO_RUNNING_CORE);
 
+  xTaskCreatePinnedToCore(
+	TaskDisplay
+    ,  "Display"
+    ,  4096  // Stack size
+    ,  NULL
+    ,  1  // Priority
+    ,  NULL
+    ,  ARDUINO_RUNNING_CORE);
   // Now the task scheduler, which takes over control of scheduling individual tasks, is automatically started.
 }
 
@@ -200,7 +239,7 @@ void TaskDiagLevel(void *pvParameters)  // This is a task.
 }
 
 
-void ArchiveMeasures(void *pvParameters)  // This is a task.
+void TaskArchiveMeas(void *pvParameters)  // This is a task.
 {
   (void) pvParameters;
 
@@ -212,9 +251,28 @@ void ArchiveMeasures(void *pvParameters)  // This is a task.
 
 		  debug_out(F("ARCH"), DEBUG_MIN_INFO, 1);
 
-		  //SDSmeas.ArchPush();
-		  //PMSmeas.ArchPush();
+		  SDSmeas.ArchPush();
+		  PMSmeas.ArchPush();
 	  }
+  }
+}
+
+void TaskDisplay(void *pvParameters)  // This is a task.
+{
+  (void) pvParameters;
+
+  for (;;) // A Task shall never return or exit.
+  {
+	  if(SDSmeas.status == SensorSt::ok && PMSmeas.status == SensorSt::ok){
+
+	  }
+	  #ifdef CFG_LCD
+		  /*****************************************************************
+		  * display values																								*
+		  *****************************************************************/
+		  display_values();
+	  #endif
+	  vTaskDelay(5000);  // one tick delay (1ms) in between reads for stability
   }
 }
 
@@ -621,5 +679,136 @@ void sensorPMS() {
 
 
 
+#ifdef CFG_LCD
+/*****************************************************************
+ * display values																								*
+ *****************************************************************/
 
+static String displayGenerateFooter(unsigned int screen_count) {
+	String display_footer;
+	for (unsigned int i = 0; i < screen_count; ++i) {
+		display_footer += (i != (next_display_count % screen_count)) ? " . " : " o ";
+	}
+	return display_footer;
+}
+
+
+void display_values() {
+
+	String display_header = "";
+	String display_lines[3] = { "", "", ""};
+
+	int screens[9];
+	int screen_count = 0;
+
+
+	if (cfg::pms_read || cfg::sds_read ) {
+		screens[screen_count++] = 1;
+	}
+
+	if (cfg::bme280_read) {
+		screens[screen_count++] = 3;
+	}
+	if (cfg::gps_read) {
+		screens[screen_count++] = 4;
+	}
+
+	//screens[screen_count++] = 5;	// Wifi info
+	screens[screen_count++] = 6;	// chipID, firmware and count of measurements
+	screens[screen_count++] = 11;	// Trend, GPS, Values
+
+	switch (screens[next_display_count % screen_count]) {
+
+	case (1):
+		display_header =  "  " + String(FPSTR(SENSORS_PMSx003)) + "  " + String(FPSTR(SENSORS_SDS011));
+		display_lines[0] = "PM  0.1:  "  + check_display_value(PMSmeas.ArchPm010.avg[0], -1.0, 1, 6) + ";" + " ---- " 									+ " µg/m³";
+		display_lines[1] = "PM  2.5:  "  + check_display_value(PMSmeas.ArchPm025.avg[0], -1.0, 1, 6) + ";" + check_display_value(SDSmeas.ArchPm025.avg[0], -1.0, 1, 6) + " µg/m³";
+		display_lines[2] = "PM 10.0:  "  + check_display_value(PMSmeas.ArchPm100.avg[0], -1.0, 1, 6) + ";" + check_display_value(SDSmeas.ArchPm100.avg[0], -1.0, 1, 6) + " µg/m³";
+		break;
+
+	case (3):
+		display_header = FPSTR(SENSORS_BME280);
+		display_lines[0] = "Temp.: " + check_display_value(0.0 , -128.0				, 1, 6) + " °C";
+		display_lines[1] = "Hum.:  " + check_display_value(0.0 , -1.0				, 1, 6) + " %";
+		display_lines[2] = "Pres.: " + check_display_value(0.0  / 100, (-1 / 100.0)	, 1, 6) + " hPa";
+		break;
+	case (4):
+		display_header = F("GPS NEO6M");
+		display_lines[0] = "Lat: " + check_display_value(0.0 , -200.0, 6, 10);
+		display_lines[1] = "Lon: " + check_display_value(0.0 , -200.0, 6, 10);
+		display_lines[2] = "Alt: " + check_display_value(0.0 , -1000.0, 2, 10);
+		break;
+	case (5):
+		display_header = F("Wifi info");
+		display_lines[0] = "";//"IP:      " + WiFi.localIP().toString();
+		display_lines[1] = "";//"SSID:    " + WiFi.SSID();
+		display_lines[2] = "";//"Signal:  " + String(calcWiFiSignalQuality(WiFi.RSSI())) + "%";
+
+		//if (WiFi.status() != WL_CONNECTED) {
+		//	display_lines[2] = "Signal:  NO CONNECTION!";
+		//}
+
+		break;
+	case (6):
+		display_header = F("Device Info");
+		display_lines[0] = "";//"ID: " + esp_chipid;
+		display_lines[1] = "";//"FW: " + String(SOFTWARE_VERSION);
+		display_lines[2] = "";//"Meas: " + String(count_sends) + " Since last: " + String((long)((msSince(starttime) + 500) / 1000)) + " s.";
+		break;
+	case (11):
+		display_header = "Measurements";
+
+
+		break;
+	}
+
+	display.clear();
+	display.displayOn();
+	display.setTextAlignment(TEXT_ALIGN_CENTER);
+	display.drawString(64, 0, display_header);
+
+	if(screens[next_display_count % screen_count] < 10){
+		display.setTextAlignment(TEXT_ALIGN_LEFT);
+		display.drawString(0, 12, display_lines[0]);
+		display.drawString(0, 24, display_lines[1]);
+		display.drawString(0, 36, display_lines[2]);
+
+		display.setTextAlignment(TEXT_ALIGN_CENTER);
+		display.drawString(64, 52, displayGenerateFooter(screen_count));
+
+//		// Show time on display
+//		struct tm timeinfo;
+//		if(got_ntp){
+//			if (getLocalTime(&timeinfo)) {
+//				char timeStringBuff[10];
+//				strftime(timeStringBuff, sizeof(timeStringBuff), "%H:%M:%S", &timeinfo);
+//				display.drawString(108, 52, String(timeStringBuff));
+//			}
+//			else{
+//				display.drawString(108, 52, "-- -- --");
+//			}
+//		}
+//		else{
+//			display.drawString(108, 52, "-- -- --");
+//		}
+	}
+	else{
+		for(int i=0; i<display.getWidth(); i++){
+			int16_t Y=0;
+
+			Y = (int16_t)PMSmeas.ArchPm025.avg[i]/2.0;
+			Y = (Y>54 ? 54 : Y);
+			display.setPixel(i, Y);
+		}
+	}
+
+
+	display.display();
+
+
+}
+
+
+
+#endif
 

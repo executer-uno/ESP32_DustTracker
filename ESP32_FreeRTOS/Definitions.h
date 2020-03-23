@@ -8,6 +8,14 @@
 #ifndef DEFINITIONS_H_
 #define DEFINITIONS_H_
 
+	// Config functionality
+
+	#define CFG_BME280
+	#define CFG_LCD
+	#define CFG_GPS
+	#define CFG_SQL
+	#define CFG_GSHEET
+
 	// Build in LED
 	#define LED_BUILTIN 2
 
@@ -29,8 +37,21 @@
 	#define FS_SSID "sensor_cfg"
 	#define FS_PWD  ""
 
+	// Initial configuration settings ***********
+	// GPS, bevorzugt Neo-6M
+	#define GPS_READ 		0
+	#define GPS_API_PIN 	9
+	// BME280, temperature, humidity, pressure
+	#define BME280_READ 	0
+	#define BME280_API_PIN 	11
+	// SDS011, der etwas teuerere Feinstaubsensor
+	#define SDS_READ 		1
+	#define SDS_API_PIN 	1
+	// PMS1003, PMS300, 3PMS5003, PMS6003, PMS7003
+	#define PMS_READ 		1
+	#define PMS_API_PIN 	1
 
-
+	// Pinout definition ************************
 	#define PM_SERIAL_RX    35	// SDS
 	#define PM_SERIAL_TX    32	// SDS
 
@@ -46,6 +67,18 @@
 	#define BUT_1 			34	// no pullup!
 	#define BUT_2 			33
 	#define BUT_3 			27
+
+	// define pins for I2C
+	#define OLED_CLASS_OBJ  SSD1306Wire
+	#define OLED_ADDRESS    0x3C
+	#define OLED_SDA    21
+	#define OLED_SCL    22
+	#define OLED_RST    -1
+
+	#define I2C_PIN_SCL OLED_SCL
+	#define I2C_PIN_SDA OLED_SDA
+
+
 
 	enum class SensorSt {
 		raw,
@@ -105,8 +138,9 @@
 	String Float2String(const double value);
 	String Float2String(const double value, uint8_t digits);
 	String Float2String(const double value, uint8_t digits, uint8_t size);
+	String check_display_value(double value, double undef, uint8_t len, uint8_t str_len);
 
-
+	void display_values();
 	void debug_out(const String& text, const int level, const bool linebreak);
 
 #endif /* DEFINITIONS_H_ */
