@@ -169,6 +169,7 @@ void setup() {
     ,  1  // Priority
     ,  NULL
     ,  ARDUINO_RUNNING_CORE);
+
   // Now the task scheduler, which takes over control of scheduling individual tasks, is automatically started.
 }
 
@@ -184,6 +185,7 @@ void loop()
 void TaskBlink(void *pvParameters)  // This is a task.
 {
   (void) pvParameters;
+  UBaseType_t uxHighWaterMark;
 
 /*
   Blink
@@ -208,13 +210,17 @@ void TaskBlink(void *pvParameters)  // This is a task.
     }
     debugPrev = cfg::debug;
 
+    uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
+	//debug_out(F("FreeStack TaskBlink = "), DEBUG_MAX_INFO, 0);
+	//debug_out(Float2String((float)uxHighWaterMark), DEBUG_MAX_INFO, 1);
   }
+
 }
 
 void TaskDiagLevel(void *pvParameters)  // This is a task.
 {
   (void) pvParameters;
-
+  UBaseType_t uxHighWaterMark;
 
   for (;;) // A Task shall never return or exit.
   {
@@ -235,6 +241,9 @@ void TaskDiagLevel(void *pvParameters)  // This is a task.
 
 		}
     vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
+    uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
+	//debug_out(F("FreeStack TaskDiagLevel = "), DEBUG_MAX_INFO, 0);
+	//debug_out(Float2String((float)uxHighWaterMark), DEBUG_MAX_INFO, 1);
   }
 }
 
@@ -242,6 +251,7 @@ void TaskDiagLevel(void *pvParameters)  // This is a task.
 void TaskArchiveMeas(void *pvParameters)  // This is a task.
 {
   (void) pvParameters;
+  UBaseType_t uxHighWaterMark;
 
   for (;;) // A Task shall never return or exit.
   {
@@ -254,12 +264,17 @@ void TaskArchiveMeas(void *pvParameters)  // This is a task.
 		  SDSmeas.ArchPush();
 		  PMSmeas.ArchPush();
 	  }
+
+      uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
+      //debug_out(F("FreeStack TaskArchiveMeas = "), DEBUG_MAX_INFO, 0);
+      //debug_out(Float2String((float)uxHighWaterMark), DEBUG_MAX_INFO, 1);
   }
 }
 
 void TaskDisplay(void *pvParameters)  // This is a task.
 {
   (void) pvParameters;
+  UBaseType_t uxHighWaterMark;
 
   for (;;) // A Task shall never return or exit.
   {
@@ -273,6 +288,10 @@ void TaskDisplay(void *pvParameters)  // This is a task.
 		  display_values();
 	  #endif
 	  vTaskDelay(5000);  // one tick delay (1ms) in between reads for stability
+
+      uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
+      //debug_out(F("FreeStack TaskDisplay = "), DEBUG_MAX_INFO, 0);
+      //debug_out(Float2String((float)uxHighWaterMark), DEBUG_MAX_INFO, 1);
   }
 }
 
@@ -280,7 +299,7 @@ void TaskDisplay(void *pvParameters)  // This is a task.
 void TaskKeyboard(void *pvParameters)  // This is a task.
 {
   (void) pvParameters;
-
+  //UBaseType_t uxHighWaterMark;
 
   for (;;) // A Task shall never return or exit.
   {
@@ -291,11 +310,13 @@ void TaskKeyboard(void *pvParameters)  // This is a task.
 	if (BUT_A && !BUT_A_PRESS)
 	{
 		debug_out(F("Button A"), DEBUG_MIN_INFO, 1);
+		next_display_count--;
 	}
 
 	if (BUT_B && !BUT_B_PRESS)
 	{
 		debug_out(F("Button B"), DEBUG_MIN_INFO, 1);
+		next_display_count++;
 	}
 
 	if (BUT_C && !BUT_C_PRESS)
@@ -310,6 +331,10 @@ void TaskKeyboard(void *pvParameters)  // This is a task.
 	BUT_C_PRESS = BUT_C;
 
     vTaskDelay(5);  // one tick delay (1ms) in between reads for stability
+
+    //uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
+	//debug_out(F("FreeStack TaskKeyboard = "), DEBUG_MAX_INFO, 0);
+	//debug_out(Float2String((float)uxHighWaterMark), DEBUG_MAX_INFO, 1);
   }
 }
 
@@ -317,9 +342,7 @@ void TaskKeyboard(void *pvParameters)  // This is a task.
 void TaskReadPMSensors(void *pvParameters)  // This is a task.
 {
   (void) pvParameters;
-
-/*
-*/
+  UBaseType_t uxHighWaterMark;
 
   for (;;)
   {
@@ -327,6 +350,10 @@ void TaskReadPMSensors(void *pvParameters)  // This is a task.
     vTaskDelay(400);  // one tick delay (1ms) in between reads for stability
     sensorSDS();
     vTaskDelay(400);  // one tick delay (1ms) in between reads for stability
+
+    uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
+	//debug_out(F("FreeStack TaskReadPMSensors = "), DEBUG_MAX_INFO, 0);
+	//debug_out(Float2String((float)uxHighWaterMark), DEBUG_MAX_INFO, 1);
 
   }
 }
