@@ -90,12 +90,6 @@
 		timeout
 	};
 
-	enum class PmSensorCmd {
-		Start,
-		Stop,
-		ContinuousMode,
-		VersionDate
-	};
 
 	struct measure {
 		float 	max;
