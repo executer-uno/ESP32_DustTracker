@@ -16,6 +16,8 @@
 	#define CFG_SQL
 	#define CFG_GSHEET
 
+	#define STUP_TIME 10000ULL
+
 	// Build in LED
 	#define LED_BUILTIN 2
 
@@ -39,10 +41,10 @@
 
 	// Initial configuration settings ***********
 	// GPS, bevorzugt Neo-6M
-	#define GPS_READ 		0
+	#define GPS_READ 		1
 	#define GPS_API_PIN 	9
 	// BME280, temperature, humidity, pressure
-	#define BME280_READ 	0
+	#define BME280_READ 	1
 	#define BME280_API_PIN 	11
 	// SDS011, der etwas teuerere Feinstaubsensor
 	#define SDS_READ 		1
@@ -115,7 +117,7 @@
 
 		struct measure 	Measurements;
 
-		SemaphoreHandle_t meas_mutex;		// Mutex to access to Measurements,pm025,pm100 accumulators
+		SemaphoreHandle_t meas_mutex;		// Mutex to access to Measurements accumulators
 
 	public:
 		SensorSt		status;				// Sensor initialized and started
@@ -129,9 +131,7 @@
 		String DebugAvg();	// Returns actual average value for debug
 		String DebugRange();// Returns string in MIN:MAX format
 		String DebugCRC();	// Returns CRC errors rate and measurements count
-		PMmeas();			// Constructor
-
-
+		PMmeas();
 	};
 
 	String Float2String(const double value);

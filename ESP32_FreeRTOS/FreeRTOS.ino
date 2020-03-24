@@ -53,12 +53,18 @@ HardwareSerial 	serialGPS(2);
 	 *****************************************************************/
 	Adafruit_BME280 bme280;
 #endif
-
 #ifdef CFG_GPS
 	/*****************************************************************
 	 * GPS declaration																							 *
 	 *****************************************************************/
 	TinyGPSPlus gps;
+
+	double last_value_GPS_lat = -200.0;
+	double last_value_GPS_lon = -200.0;
+	double last_value_GPS_alt = -200.0;
+	String last_value_GPS_date = "";
+	String last_value_GPS_time = "";
+
 #endif
 
 namespace cfg {
@@ -79,7 +85,7 @@ namespace cfg {
 }
 
 int	debugPrev;
-unsigned long next_display_count = 0;
+long next_display_count = 0;
 
 bool BUT_A_PRESS=false;
 bool BUT_B_PRESS=false;
@@ -97,19 +103,20 @@ PMmeas BMEmeasH;
 
 // define tasks
 void TaskBlink( void *pvParameters );
-void TaskReadPMSensors( void *pvParameters );
+void TaskReadSensors( void *pvParameters );
 void TaskDiagLevel( void *pvParameters );
 void TaskKeyboard( void *pvParameters );
 void TaskArchiveMeas( void *pvParameters );
 void TaskDisplay( void *pvParameters );
 
 UBaseType_t uxHighWaterMark_TaskBlink;
-UBaseType_t uxHighWaterMark_TaskReadPMSensors;
+UBaseType_t uxHighWaterMark_TaskReadSensors;
 UBaseType_t uxHighWaterMark_TaskDiagLevel;
 UBaseType_t uxHighWaterMark_TaskKeyboard;
 UBaseType_t uxHighWaterMark_TaskArchiveMeas;
 UBaseType_t uxHighWaterMark_TaskDisplay;
 
+SemaphoreHandle_t I2C_mutex;	// Mutex to access to I2C interface
 
 template<typename T, std::size_t N> constexpr std::size_t array_num_elements(const T(&)[N]) {
 	return N;
@@ -141,6 +148,7 @@ void setup() {
  	// initialize digital LED_BUILTIN as an output.
 	pinMode(LED_BUILTIN, OUTPUT);
 
+	I2C_mutex = xSemaphoreCreateMutex();
 	#ifdef CFG_LCD
 		/*****************************************************************
 		 * Init OLED display																						 *
@@ -152,18 +160,17 @@ void setup() {
 			debug_out(F("Read BME280..."), DEBUG_MIN_INFO, 1);
 			if (!initBME280(0x76) && !initBME280(0x77)) {
 				debug_out(F("Check BME280 wiring"), DEBUG_MIN_INFO, 1);
-				bme280_init_failed = 1;
+			}
+			else{
+				BMEmeasH.status = SensorSt::ok;
+				BMEmeasP.status = SensorSt::ok;
+				BMEmeasT.status = SensorSt::ok;
 			}
 		}
 	#endif
 	#ifdef CFG_GPS
-		if (cfg::gps_read && ((msSince(starttime_GPS) > SAMPLETIME_GPS_MS) || send_now)) {
-			debug_out(String(FPSTR(DBG_TXT_CALL_SENSOR)) + "GPS", DEBUG_MAX_INFO, 1);
-			result_GPS = sensorGPS();													 // getting GPS coordinates
-			starttime_GPS = act_milli;
-		}
+		initGPS();
 	#endif
-
 
 
   // Now set up two tasks to run independently.
@@ -177,9 +184,9 @@ void setup() {
     ,  ARDUINO_RUNNING_CORE);
 
   xTaskCreatePinnedToCore(
-    TaskReadPMSensors
+    TaskReadSensors
     ,  "ReadSDSPMS"
-    ,  2048  // Stack size
+    ,  2048 +1024  // Stack size
     ,  NULL
     ,  2  // Priority
     ,  NULL
@@ -217,7 +224,7 @@ void setup() {
     ,  "Display"
     ,  2048  // Stack size
     ,  NULL
-    ,  1  // Priority
+    ,  2  // Priority
     ,  NULL
     ,  ARDUINO_RUNNING_CORE);
 
@@ -297,13 +304,15 @@ void TaskArchiveMeas(void *pvParameters)  // This is a task.
 {
   (void) pvParameters;
 
+  uint counter=0;
+
   for (;;) // A Task shall never return or exit.
   {
+	  vTaskDelay(10000);  // one tick delay (1ms) in between reads for stability
 
 	  if(SDSmeasPM025.status == SensorSt::ok && PMSmeasPM025.status == SensorSt::ok){
-		  vTaskDelay(10000);  // one tick delay (1ms) in between reads for stability
 
-		  debug_out(F("ARCH"), DEBUG_MIN_INFO, 1);
+		  debug_out(F("ARCH PM"), DEBUG_MED_INFO, 1);
 
 		  SDSmeasPM025.ArchPush();
 		  SDSmeasPM100.ArchPush();
@@ -312,6 +321,15 @@ void TaskArchiveMeas(void *pvParameters)  // This is a task.
 		  PMSmeasPM100.ArchPush();
 	  }
 
+	  if(counter%3){
+		  debug_out(F("ARCH BME"), DEBUG_MED_INFO, 1);
+
+		  BMEmeasH.ArchPush();
+		  BMEmeasT.ArchPush();
+		  BMEmeasP.ArchPush();
+	  }
+
+	  counter++;
       uxHighWaterMark_TaskArchiveMeas = uxTaskGetStackHighWaterMark( NULL );
   }
 }
@@ -378,18 +396,22 @@ void TaskKeyboard(void *pvParameters)  // This is a task.
 }
 
 
-void TaskReadPMSensors(void *pvParameters)  // This is a task.
+void TaskReadSensors(void *pvParameters)  // This is a task.
 {
   (void) pvParameters;
 
   for (;;)
   {
 	sensorPMS();
-    vTaskDelay(400);  // one tick delay (1ms) in between reads for stability
+    vTaskDelay(200);  // one tick delay (1ms) in between reads for stability
     sensorSDS();
-    vTaskDelay(400);  // one tick delay (1ms) in between reads for stability
+    vTaskDelay(200);  // one tick delay (1ms) in between reads for stability
+    sensorBME280();
+    vTaskDelay(200);  // one tick delay (1ms) in between reads for stability
+    sensorGPS();
+    vTaskDelay(200);  // one tick delay (1ms) in between reads for stability
 
-    uxHighWaterMark_TaskReadPMSensors = uxTaskGetStackHighWaterMark( NULL );
+    uxHighWaterMark_TaskReadSensors = uxTaskGetStackHighWaterMark( NULL );
   }
 }
 
@@ -483,7 +505,7 @@ void sensorSDS() {
 
 	debug_out(String(FPSTR(DBG_TXT_START_READING)) + FPSTR(SENSORS_SDS011), DEBUG_MED_INFO, 1);
 
-	if ((SDSmeasPM025.status == SensorSt::raw) && (millis() > 10000ULL)) {
+	if ((SDSmeasPM025.status == SensorSt::raw) && (millis() > STUP_TIME)) {
 		SDS_cmd(PmSensorCmd::Start);
 
 		while (serialSDS.available() > 0) // Initial buffer flush
@@ -604,7 +626,7 @@ void sensorPMS() {
 	// http://download.kamami.pl/p563980-PMS3003%20series%20data%20manual_English_V2.5.pdf
 	// Sensor protocol
 
-	if((PMSmeasPM025.status == SensorSt::raw) && (millis() > 10000ULL)) {
+	if((PMSmeasPM025.status == SensorSt::raw) && (millis() > STUP_TIME)) {
 		PMS_cmd(PmSensorCmd::Start);
 
 		while (serialPMS.available() > 0) // Initial buffer flush
@@ -804,33 +826,37 @@ void display_values() {
 	screens[screen_count++] = 6;	// chipID, firmware and count of measurements
 	screens[screen_count++] = 11;	// Trend, GPS, Values
 
+	if(next_display_count<0){		// Fix bug with previous display of 0 screen
+		next_display_count = screen_count;
+	}
+
 	switch (screens[next_display_count % screen_count]) {
 
 	case (1):
 		display_header =  "  " + String(FPSTR(SENSORS_PMSx003)) + "  " + String(FPSTR(SENSORS_SDS011));
-		display_lines[0] = "PM  0.1:  "  + check_display_value(PMSmeas.ArchMeas.avg[0], -1.0, 1, 6) + ";" + " ---- " 									+ " µg/m³";
-		display_lines[1] = "PM  2.5:  "  + check_display_value(PMSmeas.ArchPm025.avg[0], -1.0, 1, 6) + ";" + check_display_value(SDSmeas.ArchPm025.avg[0], -1.0, 1, 6) + " µg/m³";
-		display_lines[2] = "PM 10.0:  "  + check_display_value(PMSmeas.ArchPm100.avg[0], -1.0, 1, 6) + ";" + check_display_value(SDSmeas.ArchPm100.avg[0], -1.0, 1, 6) + " µg/m³";
+		display_lines[0] = "PM  0.1:  "  + check_display_value(PMSmeasPM010.ArchMeas.avg[0], -1.0, 1, 6) + " µg/m³";
+		display_lines[1] = "PM  2.5:  "  + check_display_value(PMSmeasPM025.ArchMeas.avg[0], -1.0, 1, 6) + ";" + check_display_value(SDSmeasPM025.ArchMeas.avg[0], -1.0, 1, 6) + " µg/m³";
+		display_lines[2] = "PM 10.0:  "  + check_display_value(PMSmeasPM100.ArchMeas.avg[0], -1.0, 1, 6) + ";" + check_display_value(SDSmeasPM100.ArchMeas.avg[0], -1.0, 1, 6) + " µg/m³";
 		break;
 
 	case (3):
 		display_header = FPSTR(SENSORS_BME280);
-		display_lines[0] = "Temp.: " + check_display_value(0.0 , -128.0				, 1, 6) + " °C";
-		display_lines[1] = "Hum.:  " + check_display_value(0.0 , -1.0				, 1, 6) + " %";
-		display_lines[2] = "Pres.: " + check_display_value(0.0  / 100, (-1 / 100.0)	, 1, 6) + " hPa";
+		display_lines[0] = "Temp.: " + check_display_value(BMEmeasT.ArchMeas.avg[0] , -1.0				, 1, 6) + " °C";
+		display_lines[1] = "Hum.:  " + check_display_value(BMEmeasH.ArchMeas.avg[0] , -1.0				, 1, 6) + " %";
+		display_lines[2] = "Pres.: " + check_display_value(BMEmeasP.ArchMeas.avg[0]  / 100, (-1 / 100.0), 1, 6) + " hPa";
 		break;
 	case (4):
 		display_header = F("GPS NEO6M");
-		display_lines[0] = "Lat: " + check_display_value(0.0 , -200.0, 6, 10);
-		display_lines[1] = "Lon: " + check_display_value(0.0 , -200.0, 6, 10);
-		display_lines[2] = "Alt: " + check_display_value(0.0 , -1000.0, 2, 10);
+		display_lines[0] = "Lat: " + check_display_value(last_value_GPS_lat , -200.0, 6, 10);
+		display_lines[1] = "Lon: " + check_display_value(last_value_GPS_lon , -200.0, 6, 10);
+		display_lines[2] = "Alt: " + check_display_value(last_value_GPS_alt , -200.0, 2, 10);
 		break;
 	case (5):
-		display_header = F("Info");
+		display_header = F("Stack free");
 
-		display_lines[0] = check_display_value(uxHighWaterMark_TaskBlink			, 0, 0, 6) + check_display_value(uxHighWaterMark_TaskReadPMSensors	, 0, 0, 6);
-		display_lines[1] = check_display_value(uxHighWaterMark_TaskDiagLevel		, 0, 0, 6) + check_display_value(uxHighWaterMark_TaskKeyboard		, 0, 0, 6);
-		display_lines[2] = check_display_value(uxHighWaterMark_TaskArchiveMeas		, 0, 0, 6) + check_display_value(uxHighWaterMark_TaskDisplay		, 0, 0, 6);
+		display_lines[0] = "Blink" + check_display_value(uxHighWaterMark_TaskBlink			, 0, 0, 6) + "  Sens" + check_display_value(uxHighWaterMark_TaskReadSensors	, 0, 0, 6);
+		display_lines[1] = "Diag " + check_display_value(uxHighWaterMark_TaskDiagLevel		, 0, 0, 6) + "  Keyb" + check_display_value(uxHighWaterMark_TaskKeyboard		, 0, 0, 6);
+		display_lines[2] = "Arch " + check_display_value(uxHighWaterMark_TaskArchiveMeas	, 0, 0, 6) + "  Disp" + check_display_value(uxHighWaterMark_TaskDisplay		, 0, 0, 6);
 
 //		display_lines[0] = "";//"IP:      " + WiFi.localIP().toString();
 //		display_lines[1] = "";//"SSID:    " + WiFi.SSID();
@@ -853,6 +879,7 @@ void display_values() {
 		break;
 	}
 
+	xSemaphoreTake(I2C_mutex, portMAX_DELAY);
 	display.clear();
 	display.displayOn();
 	display.setTextAlignment(TEXT_ALIGN_CENTER);
@@ -887,7 +914,7 @@ void display_values() {
 		for(int i=1; i<display.getWidth(); i++){
 			int16_t Y=0;
 
-			Y = int(PMSmeas.ArchPm025.avg[i]/2);
+			Y = int(PMSmeasPM025.ArchMeas.avg[i]/2);
 
 			Y = 64-18-Y;
 			Y = (Y<1 ? 1 : Y);
@@ -897,10 +924,8 @@ void display_values() {
 		display.drawString(64, 52, displayGenerateFooter(screen_count));
 	}
 
-
 	display.display();
-
-
+	xSemaphoreGive(I2C_mutex);
 }
 
 #endif
@@ -910,40 +935,38 @@ void display_values() {
 /*****************************************************************
  * read BME280 sensor values																		 *
  *****************************************************************/
-static String sensorBME280() {
-	String s;
+void sensorBME280() {
 
 	debug_out(String(FPSTR(DBG_TXT_START_READING)) + FPSTR(SENSORS_BME280), DEBUG_MED_INFO, 1);
+
+	xSemaphoreTake(I2C_mutex, portMAX_DELAY);
 
 	bme280.takeForcedMeasurement();
 	const auto t = bme280.readTemperature();
 	const auto h = bme280.readHumidity();
 	const auto p = bme280.readPressure();
 
+	xSemaphoreGive(I2C_mutex);
+
 	if (isnan(t) || isnan(h) || isnan(p)) {
-		last_value_BME280_T = -128.0;
-		last_value_BME280_H = -1.0;
-		last_value_BME280_P = -1.0;
+
+		BMEmeasH.CRCError();
+		BMEmeasT.CRCError();
+		BMEmeasP.CRCError();
+
 		debug_out(String(FPSTR(SENSORS_BME280)) + FPSTR(DBG_TXT_COULDNT_BE_READ), DEBUG_ERROR, 1);
 	} else {
-		debug_out(FPSTR(DBG_TXT_TEMPERATURE), DEBUG_MIN_INFO, 0);
-		debug_out(Float2String(t) + " C", DEBUG_MIN_INFO, 1);
-		debug_out(FPSTR(DBG_TXT_HUMIDITY), DEBUG_MIN_INFO, 0);
-		debug_out(Float2String(h) + " %", DEBUG_MIN_INFO, 1);
-		debug_out(FPSTR(DBG_TXT_PRESSURE), DEBUG_MIN_INFO, 0);
+		debug_out(FPSTR(DBG_TXT_TEMPERATURE)	, DEBUG_MIN_INFO, 0);
+		debug_out(Float2String(t) + " C"		, DEBUG_MIN_INFO, 1);
+		debug_out(FPSTR(DBG_TXT_HUMIDITY)		, DEBUG_MIN_INFO, 0);
+		debug_out(Float2String(h) + " %"		, DEBUG_MIN_INFO, 1);
+		debug_out(FPSTR(DBG_TXT_PRESSURE)		, DEBUG_MIN_INFO, 0);
 		debug_out(Float2String(p / 100) + " hPa", DEBUG_MIN_INFO, 1);
-		last_value_BME280_T = t;
-		last_value_BME280_H = h;
-		last_value_BME280_P = p;
-		s += Value2Json(F("BME280_temperature"), Float2String(last_value_BME280_T));
-		s += Value2Json(F("BME280_humidity"), Float2String(last_value_BME280_H));
-		s += Value2Json(F("BME280_pressure"), Float2String(last_value_BME280_P));
+
+		BMEmeasH.NewMeas(h);
+		BMEmeasT.NewMeas(t);
+		BMEmeasP.NewMeas(p);
 	}
-	debug_out("----", DEBUG_MIN_INFO, 1);
-
-	debug_out(String(FPSTR(DBG_TXT_END_READING)) + FPSTR(SENSORS_BME280), DEBUG_MED_INFO, 1);
-
-	return s;
 }
 
 /*****************************************************************
@@ -988,7 +1011,7 @@ void disable_unneeded_nmea() {
 /*****************************************************************
  * read GPS sensor values																				*
  *****************************************************************/
-String sensorGPS() {
+void sensorGPS() {
 	String s = "";
 	String gps_lat = "";
 	String gps_lon = "";
@@ -1011,7 +1034,7 @@ String sensorGPS() {
 				last_value_GPS_alt = gps.altitude.meters();
 				String gps_alt = Float2String(last_value_GPS_alt, 2);
 			} else {
-				last_value_GPS_alt = -1000;
+				last_value_GPS_alt = -200;
 				debug_out(F("Altitude INVALID"), DEBUG_MAX_INFO, 1);
 			}
 			if (gps.date.isValid()) {
@@ -1033,22 +1056,22 @@ String sensorGPS() {
 			}
 
 			// gps.time.hour() resets Updated flag!
-			if(gps.time.isUpdated() && (timeUpdate < millis() )){
+			if(gps.time.isUpdated()){
 				// Set time from GPS
-			    time_t t_of_day;
-			    struct tm t;
-			    timeval epoch;
-			    const timeval *tv = &epoch;
-			    timezone utc = {0,TimeZone};
-			    const timezone *tz = &utc;
-
-			    t.tm_year = gps.date.year()  - 1900;
-			    t.tm_mon  = gps.date.month() - 1;   // Month, 0 - jan
-			    t.tm_mday = gps.date.day();         // Day of the month
-			    t.tm_hour = gps.time.hour() + GMT_OFF;
-			    t.tm_min  = gps.time.minute();
-			    t.tm_sec  = gps.time.second();
-			    t_of_day  = mktime(&t);
+//			    time_t t_of_day;
+//			    struct tm t;
+//			    timeval epoch;
+//			    const timeval *tv = &epoch;
+//			    timezone utc = {0,TimeZone};
+//			    const timezone *tz = &utc;
+//
+//			    t.tm_year = gps.date.year()  - 1900;
+//			    t.tm_mon  = gps.date.month() - 1;   // Month, 0 - jan
+//			    t.tm_mday = gps.date.day();         // Day of the month
+//			    t.tm_hour = gps.time.hour() + GMT_OFF;
+//			    t.tm_min  = gps.time.minute();
+//			    t.tm_sec  = gps.time.second();
+//			    t_of_day  = mktime(&t);
 
 //			    epoch = {t_of_day, 0};
 
@@ -1094,33 +1117,12 @@ String sensorGPS() {
 		}
 	}
 
-	if (send_now) {
-		debug_out("Lat/Lng: " + Float2String(last_value_GPS_lat, 6) + "," + Float2String(last_value_GPS_lon, 6), DEBUG_MIN_INFO, 1);
-		debug_out("Altitude: " + Float2String(last_value_GPS_alt, 2), DEBUG_MIN_INFO, 1);
-		debug_out("Date: " + last_value_GPS_date, DEBUG_MIN_INFO, 1);
-		debug_out("Time " + last_value_GPS_time, DEBUG_MIN_INFO, 1);
-		debug_out("----", DEBUG_MIN_INFO, 1);
-		if(GPS_EN){
-			s += Value2Json(F("GPS_lat"), Float2String(last_value_GPS_lat, 6));
-			s += Value2Json(F("GPS_lon"), Float2String(last_value_GPS_lon, 6));
-		}
-		else
-		{
-			s += Value2Json(F("GPS_lat"), "-200");
-			s += Value2Json(F("GPS_lon"), "-200");
-		}
-		s += Value2Json(F("GPS_height"), Float2String(last_value_GPS_alt, 2));
-		s += Value2Json(F("GPS_date"), last_value_GPS_date);
-		s += Value2Json(F("GPS_time"), last_value_GPS_time);
-	}
-
 	if ( gps.charsProcessed() < 10) {
-		//debug_out(F(": check wiring"), DEBUG_ERROR, 1);
+		debug_out(F("GPS : check wiring"), DEBUG_ERROR, 1);
 	}
 
 	debug_out(String(FPSTR(DBG_TXT_END_READING)) + "GPS", DEBUG_MED_INFO, 1);
 
-	return s;
 }
 
 
@@ -1139,18 +1141,16 @@ bool initGPS() {
 
 			if (serialGPS.available() > 0) {
 				 debug_out(F("\nGPS alive."), DEBUG_MIN_INFO, 1);
-				 break;
+				 return false;
 			}
 			if (++retryCount > 20) {
 				 debug_out(F("\nGPS timeout."), DEBUG_MIN_INFO, 1);
-				 break;
+				 return true;
 			}
 
-			delay(200);
-			debug_out(".", DEBUG_MIN_INFO, 0);
-			yield();
 		}
 	}
+	return false;
 }
 
 #endif
