@@ -113,25 +113,24 @@
 		uint32_t 		count; 		// number of measurements in accumulator
 		uint32_t 		CRCerr;		// number of CRC errors
 
-		struct measure 	pm010;
-		struct measure 	pm025;
-		struct measure 	pm100;
+		struct measure 	Measurements;
 
-		SemaphoreHandle_t meas_mutex;	// Mutex to access to pm010,pm025,pm100 accumulators
+		SemaphoreHandle_t meas_mutex;		// Mutex to access to Measurements,pm025,pm100 accumulators
 
 	public:
-		SensorSt		status;		// Sensor initialized and started
+		SensorSt		status;				// Sensor initialized and started
 		float			CRCerrRate = 0.0;	// Rate of CRC errors
 
-		struct measureArchive 	ArchPm010;
-		struct measureArchive 	ArchPm025;
-		struct measureArchive 	ArchPm100;
+		struct measureArchive 	ArchMeas;
 
-		void NewMeas(float inPm010, float inPm025, float inPm100); // Add new measurement to accumulator
+		void NewMeas(float Measure); // Add new measurement to accumulator
 		void ArchPush();	// Push measured values to archive
 		void CRCError();	// Increase CRC error counter
-		void PrintDebug();	// Print serial debug information
-		void Init();	// Print serial debug information
+		String DebugAvg();	// Returns actual average value for debug
+		String DebugRange();// Returns string in MIN:MAX format
+		String DebugCRC();	// Returns CRC errors rate and measurements count
+		PMmeas();			// Constructor
+
 
 	};
 

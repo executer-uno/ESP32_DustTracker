@@ -14,13 +14,24 @@
 
 #include "Definitions.h"
 
+// *********************** Conditional includes ****************************
 
 #ifdef CFG_LCD
+	// https://www.winstar.com.tw/products/oled-module/graphic-oled-display/color-oled-display.html
+
 	#include "oledfont.h"				// avoids including the default Arial font, needs to be included before SSD1306.h
 	#include <SSD1306.h>
 	#include <LiquidCrystal_I2C.h>
 	#include "SSD1306Wire.h"
 #endif
+#ifdef CFG_BME280
+	#include <Adafruit_BME280.h>
+#endif
+
+#ifdef CFG_GPS
+	#include <TinyGPS++.h>
+#endif
+
 
 // ***************************** Variables *********************************
 
@@ -35,6 +46,19 @@ HardwareSerial 	serialGPS(2);
 	 * Display definitions																					 *
 	 *****************************************************************/
 	SSD1306 display(0x3c, I2C_PIN_SDA, I2C_PIN_SCL); // OLED_ADDRESS
+#endif
+#ifdef CFG_BME280
+	/*****************************************************************
+	 * BME280 declaration																						*
+	 *****************************************************************/
+	Adafruit_BME280 bme280;
+#endif
+
+#ifdef CFG_GPS
+	/*****************************************************************
+	 * GPS declaration																							 *
+	 *****************************************************************/
+	TinyGPSPlus gps;
 #endif
 
 namespace cfg {
@@ -61,8 +85,15 @@ bool BUT_A_PRESS=false;
 bool BUT_B_PRESS=false;
 bool BUT_C_PRESS=false;
 
-PMmeas SDSmeas;
-PMmeas PMSmeas;
+PMmeas SDSmeasPM025;
+PMmeas SDSmeasPM100;
+PMmeas PMSmeasPM010;
+PMmeas PMSmeasPM025;
+PMmeas PMSmeasPM100;
+
+PMmeas BMEmeasP;
+PMmeas BMEmeasT;
+PMmeas BMEmeasH;
 
 // define tasks
 void TaskBlink( void *pvParameters );
@@ -110,16 +141,30 @@ void setup() {
  	// initialize digital LED_BUILTIN as an output.
 	pinMode(LED_BUILTIN, OUTPUT);
 
-	SDSmeas.Init();
-	PMSmeas.Init();
-
-
 	#ifdef CFG_LCD
 		/*****************************************************************
 		 * Init OLED display																						 *
 		 *****************************************************************/
 		display.init();
 	#endif
+	#ifdef CFG_BME280
+		if (cfg::bme280_read) {
+			debug_out(F("Read BME280..."), DEBUG_MIN_INFO, 1);
+			if (!initBME280(0x76) && !initBME280(0x77)) {
+				debug_out(F("Check BME280 wiring"), DEBUG_MIN_INFO, 1);
+				bme280_init_failed = 1;
+			}
+		}
+	#endif
+	#ifdef CFG_GPS
+		if (cfg::gps_read && ((msSince(starttime_GPS) > SAMPLETIME_GPS_MS) || send_now)) {
+			debug_out(String(FPSTR(DBG_TXT_CALL_SENSOR)) + "GPS", DEBUG_MAX_INFO, 1);
+			result_GPS = sensorGPS();													 // getting GPS coordinates
+			starttime_GPS = act_milli;
+		}
+	#endif
+
+
 
   // Now set up two tasks to run independently.
   xTaskCreatePinnedToCore(
@@ -207,7 +252,7 @@ void TaskBlink(void *pvParameters)  // This is a task.
     vTaskDelay(50);  // one tick delay (1ms) in between reads for stability
     digitalWrite(LED_BUILTIN, LOW);    // turn the LED off by making the voltage LOW
 
-    if(cfg::debug == debugPrev && SDSmeas.status == SensorSt::ok && PMSmeas.status == SensorSt::ok){
+    if(cfg::debug == debugPrev && SDSmeasPM025.status == SensorSt::ok && PMSmeasPM025.status == SensorSt::ok){
     	vTaskDelay(950);  // one tick delay (1ms) in between reads for stability
     }
     else{
@@ -255,13 +300,16 @@ void TaskArchiveMeas(void *pvParameters)  // This is a task.
   for (;;) // A Task shall never return or exit.
   {
 
-	  if(SDSmeas.status == SensorSt::ok && PMSmeas.status == SensorSt::ok){
+	  if(SDSmeasPM025.status == SensorSt::ok && PMSmeasPM025.status == SensorSt::ok){
 		  vTaskDelay(10000);  // one tick delay (1ms) in between reads for stability
 
 		  debug_out(F("ARCH"), DEBUG_MIN_INFO, 1);
 
-		  SDSmeas.ArchPush();
-		  PMSmeas.ArchPush();
+		  SDSmeasPM025.ArchPush();
+		  SDSmeasPM100.ArchPush();
+		  PMSmeasPM010.ArchPush();
+		  PMSmeasPM025.ArchPush();
+		  PMSmeasPM100.ArchPush();
 	  }
 
       uxHighWaterMark_TaskArchiveMeas = uxTaskGetStackHighWaterMark( NULL );
@@ -274,7 +322,7 @@ void TaskDisplay(void *pvParameters)  // This is a task.
 
   for (;;) // A Task shall never return or exit.
   {
-	  if(SDSmeas.status == SensorSt::ok && PMSmeas.status == SensorSt::ok){
+	  if(SDSmeasPM025.status == SensorSt::ok && PMSmeasPM025.status == SensorSt::ok){
 
 	  }
 	  #ifdef CFG_LCD
@@ -435,16 +483,19 @@ void sensorSDS() {
 
 	debug_out(String(FPSTR(DBG_TXT_START_READING)) + FPSTR(SENSORS_SDS011), DEBUG_MED_INFO, 1);
 
-	if ((SDSmeas.status == SensorSt::raw) && (millis() > 10000ULL)) {
+	if ((SDSmeasPM025.status == SensorSt::raw) && (millis() > 10000ULL)) {
 		SDS_cmd(PmSensorCmd::Start);
 
 		while (serialSDS.available() > 0) // Initial buffer flush
 		{
 			buffer = serialSDS.read();
 		}
-		SDSmeas.status = SensorSt::wait;
+		SDSmeasPM025.status = SensorSt::wait;
+		SDSmeasPM100.status = SensorSt::wait;
+
 	}
-	if (SDSmeas.status != SensorSt::raw){
+
+	if (SDSmeasPM025.status != SensorSt::raw){
 		while (serialSDS.available() > 0) {
 			buffer = serialSDS.read();
 			debug_out(String(len) + " - " + String(buffer, DEC) + " - " + String(buffer, HEX) + " - " + int(buffer) + " .", DEBUG_MAX_INFO, 1);
@@ -485,7 +536,8 @@ void sensorSDS() {
 					checksum_ok = 1;
 				} else {
 					len = -1;
-					SDSmeas.CRCError();
+					SDSmeasPM025.CRCError();
+					SDSmeasPM100.CRCError();
 				};
 				break;
 			case (9):
@@ -501,16 +553,22 @@ void sensorSDS() {
 			if (len == 10 && checksum_ok == 1 ) {
 				if ((! isnan(pm100_serial)) && (! isnan(pm025_serial))) {
 
-					SDSmeas.status = SensorSt::ok;
+					SDSmeasPM025.status = SensorSt::ok;
+					SDSmeasPM100.status = SensorSt::ok;
 
-					debug_out(F("Values: PM2.5, P10.0:"), 		DEBUG_MAX_INFO, 0);
-					debug_out(Float2String(pm025_serial, 1, 6) ,DEBUG_MAX_INFO, 0);
-					debug_out(Float2String(pm100_serial, 1, 6) ,DEBUG_MAX_INFO, 1);
+					SDSmeasPM025.NewMeas(((float)pm025_serial)/10.0);
+					SDSmeasPM100.NewMeas(((float)pm100_serial)/10.0);
 
-					SDSmeas.NewMeas((float)0.0, ((float)pm025_serial)/10.0, ((float)pm100_serial)/10.0);
+					debug_out(F("SDS:"), 												DEBUG_MIN_INFO, 0);
+					debug_out(SDSmeasPM100.DebugAvg() + "," + SDSmeasPM025.DebugAvg(),	DEBUG_MIN_INFO, 1);
 
-					SDSmeas.PrintDebug();
+					debug_out(F("SDS PM 2.5:"), 			DEBUG_MED_INFO, 0);
+					debug_out(SDSmeasPM025.DebugRange(),	DEBUG_MED_INFO, 1);
+					debug_out(F("SDS PM10.0:"), 			DEBUG_MED_INFO, 0);
+					debug_out(SDSmeasPM100.DebugRange(),	DEBUG_MED_INFO, 1);
 
+					debug_out(F("SDS CRC:"), 				DEBUG_MAX_INFO, 1);
+					debug_out(SDSmeasPM100.DebugCRC(),		DEBUG_MED_INFO, 1);
 				}
 				len = 0;
 				checksum_ok = 0;
@@ -546,16 +604,18 @@ void sensorPMS() {
 	// http://download.kamami.pl/p563980-PMS3003%20series%20data%20manual_English_V2.5.pdf
 	// Sensor protocol
 
-	if((PMSmeas.status == SensorSt::raw) && (millis() > 10000ULL)) {
+	if((PMSmeasPM025.status == SensorSt::raw) && (millis() > 10000ULL)) {
 		PMS_cmd(PmSensorCmd::Start);
 
 		while (serialPMS.available() > 0) // Initial buffer flush
 		{
 			buffer = serialPMS.read();
 		}
-		PMSmeas.status = SensorSt::wait;
+		PMSmeasPM010.status = SensorSt::wait;
+		PMSmeasPM025.status = SensorSt::wait;
+		PMSmeasPM100.status = SensorSt::wait;
 	}
-	if(PMSmeas.status != SensorSt::raw){
+	if(PMSmeasPM025.status != SensorSt::raw){
 
 		debug_out(String(FPSTR(DBG_TXT_START_READING)) + FPSTR(SENSORS_PMSx003), DEBUG_MED_INFO, 1);
 
@@ -653,23 +713,36 @@ void sensorPMS() {
 					checksum_ok = 1;
 				} else {
 					len = 0;
-					PMSmeas.CRCError();
+					PMSmeasPM010.CRCError();
+					PMSmeasPM025.CRCError();
+					PMSmeasPM100.CRCError();
 				};
 
 				// Telegram received
 				if (checksum_ok == 1) {
 					if ((! isnan(pm100_serial)) && (! isnan(pm010_serial)) && (! isnan(pm025_serial))) {
 
-						PMSmeas.status = SensorSt::ok;
+						PMSmeasPM010.status = SensorSt::ok;
+						PMSmeasPM025.status = SensorSt::ok;
+						PMSmeasPM100.status = SensorSt::ok;
 
-						debug_out(F("Values: PM1.0, PM2.5, P10.0:"), 		DEBUG_MAX_INFO, 0);
-						debug_out(Float2String(pm010_serial, 1, 6) ,DEBUG_MAX_INFO, 0);
-						debug_out(Float2String(pm025_serial, 1, 6) ,DEBUG_MAX_INFO, 0);
-						debug_out(Float2String(pm100_serial, 1, 6) ,DEBUG_MAX_INFO, 1);
+						PMSmeasPM010.NewMeas((float)pm010_serial);
+						PMSmeasPM025.NewMeas((float)pm025_serial);
+						PMSmeasPM100.NewMeas((float)pm100_serial);
 
-						PMSmeas.NewMeas((float)pm010_serial, (float)pm025_serial, (float)pm100_serial);
+						debug_out(F("PMS:"), 																				DEBUG_MIN_INFO, 0);
+						debug_out(PMSmeasPM100.DebugAvg() + "," + PMSmeasPM025.DebugAvg() + "," + PMSmeasPM010.DebugAvg(),	DEBUG_MIN_INFO, 1);
 
-						PMSmeas.PrintDebug();
+						debug_out(F("PMS PM 1.0:"), 			DEBUG_MED_INFO, 0);
+						debug_out(PMSmeasPM010.DebugRange(),	DEBUG_MED_INFO, 1);
+						debug_out(F("PMS PM 2.5:"), 			DEBUG_MED_INFO, 0);
+						debug_out(PMSmeasPM025.DebugRange(),	DEBUG_MED_INFO, 1);
+						debug_out(F("PMS PM10.0:"), 			DEBUG_MED_INFO, 0);
+						debug_out(PMSmeasPM100.DebugRange(),	DEBUG_MED_INFO, 1);
+
+						debug_out(F("PMS CRC:"), 				DEBUG_MAX_INFO, 1);
+						debug_out(PMSmeasPM100.DebugCRC(),		DEBUG_MED_INFO, 1);
+
 
 					}
 					len = 0;
@@ -735,7 +808,7 @@ void display_values() {
 
 	case (1):
 		display_header =  "  " + String(FPSTR(SENSORS_PMSx003)) + "  " + String(FPSTR(SENSORS_SDS011));
-		display_lines[0] = "PM  0.1:  "  + check_display_value(PMSmeas.ArchPm010.avg[0], -1.0, 1, 6) + ";" + " ---- " 									+ " µg/m³";
+		display_lines[0] = "PM  0.1:  "  + check_display_value(PMSmeas.ArchMeas.avg[0], -1.0, 1, 6) + ";" + " ---- " 									+ " µg/m³";
 		display_lines[1] = "PM  2.5:  "  + check_display_value(PMSmeas.ArchPm025.avg[0], -1.0, 1, 6) + ";" + check_display_value(SDSmeas.ArchPm025.avg[0], -1.0, 1, 6) + " µg/m³";
 		display_lines[2] = "PM 10.0:  "  + check_display_value(PMSmeas.ArchPm100.avg[0], -1.0, 1, 6) + ";" + check_display_value(SDSmeas.ArchPm100.avg[0], -1.0, 1, 6) + " µg/m³";
 		break;
@@ -830,7 +903,254 @@ void display_values() {
 
 }
 
-
-
 #endif
 
+
+#ifdef CFG_BME280
+/*****************************************************************
+ * read BME280 sensor values																		 *
+ *****************************************************************/
+static String sensorBME280() {
+	String s;
+
+	debug_out(String(FPSTR(DBG_TXT_START_READING)) + FPSTR(SENSORS_BME280), DEBUG_MED_INFO, 1);
+
+	bme280.takeForcedMeasurement();
+	const auto t = bme280.readTemperature();
+	const auto h = bme280.readHumidity();
+	const auto p = bme280.readPressure();
+
+	if (isnan(t) || isnan(h) || isnan(p)) {
+		last_value_BME280_T = -128.0;
+		last_value_BME280_H = -1.0;
+		last_value_BME280_P = -1.0;
+		debug_out(String(FPSTR(SENSORS_BME280)) + FPSTR(DBG_TXT_COULDNT_BE_READ), DEBUG_ERROR, 1);
+	} else {
+		debug_out(FPSTR(DBG_TXT_TEMPERATURE), DEBUG_MIN_INFO, 0);
+		debug_out(Float2String(t) + " C", DEBUG_MIN_INFO, 1);
+		debug_out(FPSTR(DBG_TXT_HUMIDITY), DEBUG_MIN_INFO, 0);
+		debug_out(Float2String(h) + " %", DEBUG_MIN_INFO, 1);
+		debug_out(FPSTR(DBG_TXT_PRESSURE), DEBUG_MIN_INFO, 0);
+		debug_out(Float2String(p / 100) + " hPa", DEBUG_MIN_INFO, 1);
+		last_value_BME280_T = t;
+		last_value_BME280_H = h;
+		last_value_BME280_P = p;
+		s += Value2Json(F("BME280_temperature"), Float2String(last_value_BME280_T));
+		s += Value2Json(F("BME280_humidity"), Float2String(last_value_BME280_H));
+		s += Value2Json(F("BME280_pressure"), Float2String(last_value_BME280_P));
+	}
+	debug_out("----", DEBUG_MIN_INFO, 1);
+
+	debug_out(String(FPSTR(DBG_TXT_END_READING)) + FPSTR(SENSORS_BME280), DEBUG_MED_INFO, 1);
+
+	return s;
+}
+
+/*****************************************************************
+ * Init BME280																									 *
+ *****************************************************************/
+bool initBME280(char addr) {
+	debug_out(F("Trying BME280 sensor on "), DEBUG_MIN_INFO, 0);
+	debug_out(String(addr, HEX), DEBUG_MIN_INFO, 0);
+
+	if (bme280.begin(addr)) {
+		debug_out(F(" ... found"), DEBUG_MIN_INFO, 1);
+		bme280.setSampling(
+			Adafruit_BME280::MODE_FORCED,
+			Adafruit_BME280::SAMPLING_X1,
+			Adafruit_BME280::SAMPLING_X1,
+			Adafruit_BME280::SAMPLING_X1,
+			Adafruit_BME280::FILTER_OFF);
+		return true;
+	} else {
+		debug_out(F(" ... not found"), DEBUG_MIN_INFO, 1);
+		return false;
+	}
+}
+#endif
+
+
+#ifdef CFG_GPS
+
+/*****************************************************************
+ * disable unneeded NMEA sentences, TinyGPS++ needs GGA, RMC		 *
+ *****************************************************************/
+void disable_unneeded_nmea() {
+	serialGPS.println(F("$PUBX,40,GLL,0,0,0,0*5C"));			 // Geographic position, latitude / longitude
+//	serialGPS.println(F("$PUBX,40,GGA,0,0,0,0*5A"));			 // Global Positioning System Fix Data
+	serialGPS.println(F("$PUBX,40,GSA,0,0,0,0*4E"));			 // GPS DOP and active satellites
+//	serialGPS.println(F("$PUBX,40,RMC,0,0,0,0*47"));			 // Recommended minimum specific GPS/Transit data
+	serialGPS.println(F("$PUBX,40,GSV,0,0,0,0*59"));			 // GNSS satellites in view
+	serialGPS.println(F("$PUBX,40,VTG,0,0,0,0*5E"));			 // Track made good and ground speed
+}
+
+
+/*****************************************************************
+ * read GPS sensor values																				*
+ *****************************************************************/
+String sensorGPS() {
+	String s = "";
+	String gps_lat = "";
+	String gps_lon = "";
+
+	debug_out(String(FPSTR(DBG_TXT_START_READING)) + "GPS", DEBUG_MED_INFO, 1);
+
+	while (serialGPS.available() > 0) {
+		if (gps.encode(serialGPS.read())) {
+			if (gps.location.isValid()) {
+				last_value_GPS_lat = gps.location.lat();
+				last_value_GPS_lon = gps.location.lng();
+				gps_lat = Float2String(last_value_GPS_lat, 6);
+				gps_lon = Float2String(last_value_GPS_lon, 6);
+			} else {
+				last_value_GPS_lat = -200;
+				last_value_GPS_lon = -200;
+				debug_out(F("Lat/Lng INVALID"), DEBUG_MAX_INFO, 1);
+			}
+			if (gps.altitude.isValid()) {
+				last_value_GPS_alt = gps.altitude.meters();
+				String gps_alt = Float2String(last_value_GPS_alt, 2);
+			} else {
+				last_value_GPS_alt = -1000;
+				debug_out(F("Altitude INVALID"), DEBUG_MAX_INFO, 1);
+			}
+			if (gps.date.isValid()) {
+				String gps_date = "";
+				if (gps.date.month() < 10) {
+					gps_date += "0";
+				}
+				gps_date += String(gps.date.month());
+				gps_date += "/";
+				if (gps.date.day() < 10) {
+					gps_date += "0";
+				}
+				gps_date += String(gps.date.day());
+				gps_date += "/";
+				gps_date += String(gps.date.year());
+				last_value_GPS_date = gps_date;
+			} else {
+				debug_out(F("Date INVALID"), DEBUG_MAX_INFO, 1);
+			}
+
+			// gps.time.hour() resets Updated flag!
+			if(gps.time.isUpdated() && (timeUpdate < millis() )){
+				// Set time from GPS
+			    time_t t_of_day;
+			    struct tm t;
+			    timeval epoch;
+			    const timeval *tv = &epoch;
+			    timezone utc = {0,TimeZone};
+			    const timezone *tz = &utc;
+
+			    t.tm_year = gps.date.year()  - 1900;
+			    t.tm_mon  = gps.date.month() - 1;   // Month, 0 - jan
+			    t.tm_mday = gps.date.day();         // Day of the month
+			    t.tm_hour = gps.time.hour() + GMT_OFF;
+			    t.tm_min  = gps.time.minute();
+			    t.tm_sec  = gps.time.second();
+			    t_of_day  = mktime(&t);
+
+//			    epoch = {t_of_day, 0};
+
+//			    settimeofday(tv, tz);
+//				setenv("TZ", TZ_INFO, 1);
+//				tzset(); 							// Assign the local timezone from setenv
+
+//				debug_out(F("GPS Time setted"), DEBUG_MAX_INFO, 1);
+//				got_ntp = true;
+//				timeUpdate = millis() + 300000;
+
+//				time_str = printLocalTime();
+//				Serial.println("----------> Local Time = " + time_str);
+
+			}
+
+			if (gps.time.isValid()) {
+				String gps_time = "";
+				if (gps.time.hour() < 10) {
+					gps_time += "0";
+				}
+				gps_time += String(gps.time.hour());
+				gps_time += ":";
+				if (gps.time.minute() < 10) {
+					gps_time += "0";
+				}
+				gps_time += String(gps.time.minute());
+				gps_time += ":";
+				if (gps.time.second() < 10) {
+					gps_time += "0";
+				}
+				gps_time += String(gps.time.second());
+				gps_time += ".";
+				if (gps.time.centisecond() < 10) {
+					gps_time += "0";
+				}
+				gps_time += String(gps.time.centisecond());
+				last_value_GPS_time = gps_time;
+			} else {
+				debug_out(F("Time: INVALID"), DEBUG_MAX_INFO, 1);
+			}
+
+		}
+	}
+
+	if (send_now) {
+		debug_out("Lat/Lng: " + Float2String(last_value_GPS_lat, 6) + "," + Float2String(last_value_GPS_lon, 6), DEBUG_MIN_INFO, 1);
+		debug_out("Altitude: " + Float2String(last_value_GPS_alt, 2), DEBUG_MIN_INFO, 1);
+		debug_out("Date: " + last_value_GPS_date, DEBUG_MIN_INFO, 1);
+		debug_out("Time " + last_value_GPS_time, DEBUG_MIN_INFO, 1);
+		debug_out("----", DEBUG_MIN_INFO, 1);
+		if(GPS_EN){
+			s += Value2Json(F("GPS_lat"), Float2String(last_value_GPS_lat, 6));
+			s += Value2Json(F("GPS_lon"), Float2String(last_value_GPS_lon, 6));
+		}
+		else
+		{
+			s += Value2Json(F("GPS_lat"), "-200");
+			s += Value2Json(F("GPS_lon"), "-200");
+		}
+		s += Value2Json(F("GPS_height"), Float2String(last_value_GPS_alt, 2));
+		s += Value2Json(F("GPS_date"), last_value_GPS_date);
+		s += Value2Json(F("GPS_time"), last_value_GPS_time);
+	}
+
+	if ( gps.charsProcessed() < 10) {
+		//debug_out(F(": check wiring"), DEBUG_ERROR, 1);
+	}
+
+	debug_out(String(FPSTR(DBG_TXT_END_READING)) + "GPS", DEBUG_MED_INFO, 1);
+
+	return s;
+}
+
+
+bool initGPS() {
+
+	if (cfg::gps_read) {
+		int retryCount = 0;
+
+		disable_unneeded_nmea();
+		debug_out(F("GPS configuration done."), DEBUG_MIN_INFO, 1);
+
+		serialGPS.flush();
+		while(serialGPS.available()) serialGPS.read();
+		debug_out(F("Wait GPS communication "), DEBUG_MIN_INFO, 0);
+		while (true) {	// Wait for GPS loop
+
+			if (serialGPS.available() > 0) {
+				 debug_out(F("\nGPS alive."), DEBUG_MIN_INFO, 1);
+				 break;
+			}
+			if (++retryCount > 20) {
+				 debug_out(F("\nGPS timeout."), DEBUG_MIN_INFO, 1);
+				 break;
+			}
+
+			delay(200);
+			debug_out(".", DEBUG_MIN_INFO, 0);
+			yield();
+		}
+	}
+}
+
+#endif
