@@ -34,6 +34,40 @@
 #endif
 
 
+#include <FS.h>										 // must be first
+#ifdef CFG_SQL
+	//#include <stdio.h>
+	//#include <stdlib.h>
+	//#include <SPI.h>
+
+	#include <sqlite3.h>
+	#include "SD.h"
+/*	Connections:
+		 * SD Card | ESP32
+		 *	DAT2			 -
+		 *	DAT3			 SS (D5)
+		 *	CMD				MOSI (D23)
+		 *	VSS				GND
+		 *	VDD				3.3V
+		 *	CLK				SCK (D18)
+		 *	DAT0			 MISO (D19)
+		 *	DAT1			 -			*/
+	//#include "SPIFFS.h"
+	/* You only need to format SPIFFS the first time you run a
+		 test or else use the SPIFFS plugin to create a partition
+		 https://github.com/me-no-dev/arduino-esp32fs-plugin */
+	#define FORMAT_SPIFFS_IF_FAILED true
+	#define DB_PATH "/sd/DB_portable.db"
+
+	sqlite3 	*db;
+	int 		rc;
+	sqlite3_stmt *res;
+	int 		rec_count = 0;
+#endif
+
+
+
+
 // ***************************** Variables *********************************
 
 BluetoothSerial Serial; 		//Object for Bluetooth
@@ -91,6 +125,9 @@ long next_display_count = 0;
 bool BUT_A_PRESS=false;
 bool BUT_B_PRESS=false;
 bool BUT_C_PRESS=false;
+
+bool BUT_DB_CLEAR_FLAG=false;
+
 
 PMmeas SDSmeasPM025;
 PMmeas SDSmeasPM100;
@@ -152,6 +189,9 @@ void setup() {
 		 * Init OLED display																						 *
 		 *****************************************************************/
 		display.init();
+		//display.mirrorScreen();
+		display.flipScreenVertically();
+
 	#endif
 	#ifdef CFG_BME280
 		if (cfg::bme280_read) {
@@ -168,6 +208,117 @@ void setup() {
 	#endif
 	#ifdef CFG_GPS
 		initGPS();
+	#endif
+
+	#ifdef CFG_SQL
+		SD.begin();
+		if(!SD.begin()){
+			debug_out(F("Card Mount Failed."),							DEBUG_ERROR, 1);
+		}
+		uint8_t cardType = SD.cardType();
+
+		if(cardType == CARD_NONE){
+			debug_out(F("No SD card attached."),						DEBUG_ERROR, 1);
+		}
+		else
+		{
+			debug_out(F("SD Card Type: "),						DEBUG_MED_INFO, 0);
+
+			if(cardType == CARD_MMC){
+					debug_out(F("MMC"),							DEBUG_MED_INFO, 1);
+			} else if(cardType == CARD_SD){
+					debug_out(F("SDSC"),						DEBUG_MED_INFO, 1);
+			} else if(cardType == CARD_SDHC){
+					debug_out(F("SDHC"),						DEBUG_MED_INFO, 1);
+			} else {
+					debug_out(F("UNKNOWN"),						DEBUG_MED_INFO, 1);
+			}
+			uint64_t cardSize = SD.cardSize() / (1024 * 1024);
+
+			debug_out("SD Card Size: "+ String(int(cardSize)) 						+ "MB",DEBUG_MED_INFO, 1);
+			debug_out("Total space:  "+ String(int(SD.totalBytes() / (1024 * 1024)))+ "MB",DEBUG_MED_INFO, 1);
+			debug_out("Used space:   "+ String(int(SD.usedBytes() / (1024 * 1024)))	+ "MB",DEBUG_MED_INFO, 1);
+
+			File root = SD.open("/");
+			if (!root) {
+				debug_out(F("- failed to open directory"),		DEBUG_ERROR, 1);
+			}
+			else
+			{
+				if (!root.isDirectory()) {
+					debug_out(F("- not a directory"),			DEBUG_ERROR, 1);
+				}
+				else
+				{
+
+					sqlite3_initialize();
+
+					if (!db_open(DB_PATH, &db))
+						{
+
+						rc = db_exec(db, "PRAGMA page_size = 512;");
+						if (rc != SQLITE_OK) {
+							 Serial.println("PRAGMA page_size set failure");
+						}
+
+						rc = db_exec(db, "PRAGMA default_cache_size = 200; PRAGMA cache_size = 200;");
+						if (rc != SQLITE_OK) {
+							 Serial.println("PRAGMA default_cache_size set failure");
+						}
+
+						rc = db_exec(db, "CREATE TABLE IF NOT EXISTS measBME (datetime, sendGS BOOL, sendAD BOOL, temp REAL, press REAL, humid REAL);");
+						if (rc != SQLITE_OK) {
+							 sqlite3_close(db);
+							 Serial.println("Table measurements 'measBME' creation failure");
+							 return;
+						}
+
+						rc = db_exec(db, "CREATE TABLE IF NOT EXISTS measPMS (datetime, sendGS BOOL, sendAD BOOL, PM010 REAL, PM025 REAL, PM100 REAL);");
+						if (rc != SQLITE_OK) {
+							 sqlite3_close(db);
+							 Serial.println("Table measurements 'measPMS' creation failure");
+							 return;
+						}
+
+						rc = db_exec(db, "CREATE TABLE IF NOT EXISTS measSDS (datetime, sendGS BOOL, sendAD BOOL, PM025 REAL, PM100 REAL);");
+						if (rc != SQLITE_OK) {
+							 sqlite3_close(db);
+							 Serial.println("Table measurements 'measSDS' creation failure");
+							 return;
+						}
+
+						rc = db_exec(db, "CREATE TABLE IF NOT EXISTS measGPS (datetime, sendGS BOOL, sendAD BOOL, lat REAL, lon REAL);");
+						if (rc != SQLITE_OK) {
+							 sqlite3_close(db);
+							 Serial.println("Table measurements 'measGPS' creation failure");
+							 return;
+						}
+
+						// get actual number of records to variable
+						const char *sql = "Select count(*) from measurements";
+						if (sqlite3_prepare_v2(db, sql, -1, &res, NULL) != SQLITE_OK) {
+								String resp = "Failed to fetch data: ";
+								resp += sqlite3_errmsg(db);
+								Serial.println(resp);
+						}
+						else {
+							if (sqlite3_step(res) != SQLITE_ROW) {
+									String resp = "Step failure: ";
+									resp += sqlite3_errmsg(db);
+									Serial.println(resp);
+							}
+							else {
+									rec_count = sqlite3_column_int(res, 0);
+							}
+						}
+						sqlite3_finalize(res);
+						sqlite3_close(db);
+					}
+				}
+			}
+		}
+
+
 	#endif
 
 
@@ -211,7 +362,7 @@ void setup() {
   xTaskCreatePinnedToCore(
 	TaskArchiveMeas
     ,  "CyclicArcive"
-    ,  1024 // Stack size
+    ,  1024*8 // Stack size
     ,  NULL
     ,  1  // Priority
     ,  NULL
@@ -254,11 +405,11 @@ void TaskBlink(void *pvParameters)  // This is a task.
   for (;;) // A Task shall never return or exit.
   {
     digitalWrite(LED_BUILTIN, HIGH);   // turn the LED on (HIGH is the voltage level)
-    vTaskDelay(50);  // one tick delay (1ms) in between reads for stability
+    vTaskDelay(10);  // one tick delay (1ms) in between reads for stability
     digitalWrite(LED_BUILTIN, LOW);    // turn the LED off by making the voltage LOW
 
     if(cfg::debug == debugPrev && SDSmeasPM025.status == SensorSt::ok && PMSmeasPM025.status == SensorSt::ok){
-    	vTaskDelay(950);  // one tick delay (1ms) in between reads for stability
+    	vTaskDelay(990);  // one tick delay (1ms) in between reads for stability
     }
     else{
     	vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
@@ -302,32 +453,32 @@ void TaskArchiveMeas(void *pvParameters)  // This is a task.
 {
   (void) pvParameters;
 
-  uint counter=0;
-
   for (;;) // A Task shall never return or exit.
   {
-	  vTaskDelay(10000);  // one tick delay (1ms) in between reads for stability
+	  vTaskDelay(60000);  // one tick delay (1ms) in between reads for stability
+
+	  if(BUT_DB_CLEAR_FLAG){
+		  ClearDB();
+		  BUT_DB_CLEAR_FLAG = false;
+	  }
 
 	  if(SDSmeasPM025.status == SensorSt::ok && PMSmeasPM025.status == SensorSt::ok){
 
-		  debug_out(F("ARCH PM"), DEBUG_MED_INFO, 1);
+		  debug_out(F("ARCH"), DEBUG_MED_INFO, 1);
 
 		  SDSmeasPM025.ArchPush();
 		  SDSmeasPM100.ArchPush();
 		  PMSmeasPM010.ArchPush();
 		  PMSmeasPM025.ArchPush();
 		  PMSmeasPM100.ArchPush();
-	  }
-
-	  if(counter%3){
-		  debug_out(F("ARCH BME"), DEBUG_MED_INFO, 1);
 
 		  BMEmeasH.ArchPush();
 		  BMEmeasT.ArchPush();
 		  BMEmeasP.ArchPush();
+
+		  Store2DB();
 	  }
 
-	  counter++;
       uxHighWaterMark_TaskArchiveMeas = uxTaskGetStackHighWaterMark( NULL );
   }
 }
@@ -360,28 +511,26 @@ void TaskKeyboard(void *pvParameters)  // This is a task.
 
   for (;;) // A Task shall never return or exit.
   {
-	bool BUT_A = !digitalRead(BUT_3);
+	bool BUT_A = !digitalRead(BUT_1);	// no internal pullup
 	bool BUT_B = !digitalRead(BUT_2);
-	bool BUT_C = false; //!digitalRead(BUT_1);// unitll no pullup
+	bool BUT_C = !digitalRead(BUT_3);
 
 	if (BUT_A && !BUT_A_PRESS)
 	{
-		debug_out(F("Button A"), DEBUG_MIN_INFO, 1);
+		debug_out(F("Button Left"), 	DEBUG_WARNING, 1);
 		next_display_count--;
 	}
 
 	if (BUT_B && !BUT_B_PRESS)
 	{
-		debug_out(F("Button B"), DEBUG_MIN_INFO, 1);
-		next_display_count++;
+		debug_out(F("Button Mid"), 		DEBUG_WARNING, 1);
 	}
 
 	if (BUT_C && !BUT_C_PRESS)
 	{
-		debug_out(F("Button C"), DEBUG_MIN_INFO, 1);
+		debug_out(F("Button Center"), 	DEBUG_WARNING, 1);
+		next_display_count++;
 	}
-
-
 
 	BUT_A_PRESS = BUT_A;
 	BUT_B_PRESS = BUT_B;
@@ -497,9 +646,17 @@ void display_values() {
 		break;
 	case (6):
 		display_header = F("Device Info");
-		display_lines[0] = "";//"ID: " + esp_chipid;
+		display_lines[0] = "DB records: " + String(rec_count);//"ID: " + esp_chipid;
 		display_lines[1] = "";//"FW: " + String(SOFTWARE_VERSION);
 		display_lines[2] = "";//"Meas: " + String(count_sends) + " Since last: " + String((long)((msSince(starttime) + 500) / 1000)) + " s.";
+
+
+
+		if(BUT_B_PRESS){
+			BUT_DB_CLEAR_FLAG = true;
+		}
+
+
 		break;
 	case (11):
 		display_header = "Measurements";
@@ -516,9 +673,9 @@ void display_values() {
 	if(screens[next_display_count % screen_count] < 10){
 		display.drawString(64, 0, display_header);
 		display.setTextAlignment(TEXT_ALIGN_LEFT);
-		display.drawString(0, 12, display_lines[0]);
-		display.drawString(0, 24, display_lines[1]);
-		display.drawString(0, 36, display_lines[2]);
+		display.drawString(0, 13, display_lines[0]);
+		display.drawString(0, 25, display_lines[1]);
+		display.drawString(0, 37, display_lines[2]);
 
 		display.setTextAlignment(TEXT_ALIGN_CENTER);
 		display.drawString(64, 52, displayGenerateFooter(screen_count));
@@ -780,6 +937,186 @@ bool initGPS() {
 		}
 	}
 	return false;
+}
+
+#endif
+
+
+
+#ifdef CFG_SQL
+	const char* data = "Callback function called";
+	static int callback(void *data, int argc, char **argv, char **azColName) {
+		 int i;
+		 debug_out(String((const char*)data), 					DEBUG_MED_INFO, 0);
+		 debug_out(F(": "), 									DEBUG_MED_INFO, 0);
+		 for (i = 0; i<argc; i++){
+				 debug_out(String(azColName[i]), 				DEBUG_MED_INFO, 0);
+				 debug_out(F(" = "), 							DEBUG_MED_INFO, 0);
+				 debug_out(String(argv[i] ? argv[i] : "NULL"), 	DEBUG_MED_INFO, 1);
+		 }
+		 debug_out(F(""), 										DEBUG_MED_INFO, 1);
+		 return 0;
+	}
+
+	int db_open(const char *filename, sqlite3 **db) {
+		 int rc = sqlite3_open(filename, db);
+		 if (rc) {
+				 debug_out(F("Can't open database: "), 			DEBUG_MED_INFO, 0);
+				 debug_out(String(sqlite3_errmsg(*db)), 		DEBUG_MED_INFO, 1);
+				 return rc;
+		 } else {
+				 debug_out(F("Opened database successfully"), 	DEBUG_MED_INFO, 1);
+		 }
+		 return rc;
+	}
+
+	char *zErrMsg = 0;
+	int db_exec(sqlite3 *db, const char *sql) {
+		 Serial.println(sql);
+		 long start = micros();
+		 int rc = sqlite3_exec(db, sql, callback, (void*)data, &zErrMsg);
+		 if (rc != SQLITE_OK) {
+				 debug_out(F("SQL error: "), 					DEBUG_MED_INFO, 0);
+				 debug_out(String(zErrMsg), 					DEBUG_MED_INFO, 1);
+				 sqlite3_free(zErrMsg);
+		 } else {
+				 debug_out(F("Operation done successfully"), 	DEBUG_MED_INFO, 1);
+		 }
+		 debug_out(F("Time taken:"), 							DEBUG_MED_INFO, 0);
+		 debug_out(String(micros()-start), 						DEBUG_MED_INFO, 1);
+
+		 return rc;
+	}
+
+
+void Store2DB(){
+	if (!db_open(DB_PATH, &db))
+	{
+		/*
+		"CREATE TABLE IF NOT EXISTS measGPS (datetime, sendGS BOOL, sendAD BOOL, lat REAL, lon REAL);"
+		"CREATE TABLE IF NOT EXISTS measSDS (datetime, sendGS BOOL, sendAD BOOL, PM025 REAL, PM100 REAL);"
+		"CREATE TABLE IF NOT EXISTS measPMS (datetime, sendGS BOOL, sendAD BOOL, PM010 REAL, PM025 REAL, PM100 REAL);"
+		"CREATE TABLE IF NOT EXISTS measBME (datetime, sendGS BOOL, sendAD BOOL, temp REAL, press REAL, humid REAL);"
+		*/
+
+		String query = "";
+		String DateTime = "2020.02.19 18:65:26.325";
+
+		query  = "INSERT INTO measBME (datetime, temp, press, humid) VALUES ('" + DateTime + "',";
+		query += Float2String(BMEmeasT.ArchMeas.avg[0]) + ",";
+		query += Float2String(BMEmeasP.ArchMeas.avg[0]) + ",";
+		query += Float2String(BMEmeasH.ArchMeas.avg[0]) + ")";
+
+		rc = db_exec(db, query.c_str());
+		if (rc != SQLITE_OK) {
+			debug_out(F("Table 'measBME' not updated"),			DEBUG_ERROR, 1);
+		}
+
+		query  = "INSERT INTO measSDS (datetime, PM025, PM100) VALUES ('" + DateTime + "',";
+		query += Float2String(SDSmeasPM025.ArchMeas.avg[0]) + ",";
+		query += Float2String(SDSmeasPM100.ArchMeas.avg[0]) + ")";
+
+		rc = db_exec(db, query.c_str());
+		if (rc != SQLITE_OK) {
+			debug_out(F("Table 'measSDS' not updated"),			DEBUG_ERROR, 1);
+		}
+
+		query  = "INSERT INTO measPMS (datetime, PM010, PM025, PM100) VALUES ('" + DateTime + "',";
+		query += Float2String(PMSmeasPM010.ArchMeas.avg[0]) + ",";
+		query += Float2String(PMSmeasPM025.ArchMeas.avg[0]) + ",";
+		query += Float2String(PMSmeasPM100.ArchMeas.avg[0]) + ")";
+
+		rc = db_exec(db, query.c_str());
+		if (rc != SQLITE_OK) {
+			debug_out(F("Table 'measPMS' not updated"),			DEBUG_ERROR, 1);
+		}
+
+		query  = "INSERT INTO measGPS (datetime, lat, lon) VALUES ('" + DateTime + "',";
+		query += Float2String(last_value_GPS_lat) + ",";
+		query += Float2String(last_value_GPS_lon) + ")";
+
+		rc = db_exec(db, query.c_str());
+		if (rc != SQLITE_OK) {
+			debug_out(F("Table 'measGPS' not updated"),			DEBUG_ERROR, 1);
+		}
+
+		// get actual number of records to variable
+		const char *sql = "Select count(*) from measBME";
+		if (sqlite3_prepare_v2(db, sql, -1, &res, NULL) != SQLITE_OK) {
+				String resp = "Failed to fetch data: ";
+				resp += sqlite3_errmsg(db);
+				debug_out(resp,								DEBUG_ERROR, 1);
+		}
+		else {
+			if (sqlite3_step(res) != SQLITE_ROW) {
+					String resp = "Step failure: ";
+					resp += sqlite3_errmsg(db);
+					debug_out(resp,							DEBUG_ERROR, 1);
+			}
+			else {
+					rec_count = sqlite3_column_int(res, 0);
+			}
+		}
+
+		debug_out("Count measBME records = " + String(rec_count),		DEBUG_MIN_INFO, 1);
+
+		sqlite3_finalize(res);
+
+		sqlite3_close(db);
+	}
+	else{
+		debug_out(F("Store2DB: DB opening error."),						DEBUG_ERROR, 1);
+	}
+}
+
+
+void ClearDB(){
+	if (!db_open(DB_PATH, &db))
+	{
+		/*
+		"CREATE TABLE IF NOT EXISTS measGPS (datetime, sendGS BOOL, sendAD BOOL, lat REAL, lon REAL);"
+		"CREATE TABLE IF NOT EXISTS measSDS (datetime, sendGS BOOL, sendAD BOOL, PM025 REAL, PM100 REAL);"
+		"CREATE TABLE IF NOT EXISTS measPMS (datetime, sendGS BOOL, sendAD BOOL, PM010 REAL, PM025 REAL, PM100 REAL);"
+		"CREATE TABLE IF NOT EXISTS measBME (datetime, sendGS BOOL, sendAD BOOL, temp REAL, press REAL, humid REAL);"
+		*/
+
+		String query = "";
+
+		query  = "DELETE FROM measBME;";
+
+		rc = db_exec(db, query.c_str());
+		if (rc != SQLITE_OK) {
+			debug_out(F("Table 'measBME' not updated"),			DEBUG_ERROR, 1);
+		}
+
+		query  = "DELETE FROM measSDS;";
+
+		rc = db_exec(db, query.c_str());
+		if (rc != SQLITE_OK) {
+			debug_out(F("Table 'measSDS' not updated"),			DEBUG_ERROR, 1);
+		}
+
+		query  = "DELETE FROM measPMS;";
+
+		rc = db_exec(db, query.c_str());
+		if (rc != SQLITE_OK) {
+			debug_out(F("Table 'measPMS' not updated"),			DEBUG_ERROR, 1);
+		}
+
+		query  = "DELETE FROM measGPS;";
+
+		rc = db_exec(db, query.c_str());
+		if (rc != SQLITE_OK) {
+			debug_out(F("Table 'measGPS' not updated"),			DEBUG_ERROR, 1);
+		}
+
+		rec_count = 0;
+
+		sqlite3_close(db);
+	}
+	else{
+		debug_out(F("ClearDB: DB opening error."),				DEBUG_ERROR, 1);
+	}
 }
 
 #endif
