@@ -136,6 +136,5 @@
 
 	void display_values();
 	void debug_out(const String& text, const int level, const bool linebreak);
-	void debug_out_from_ISR(const String& text, const int level, const bool linebreak);
 
 #endif /* DEFINITIONS_H_ */
