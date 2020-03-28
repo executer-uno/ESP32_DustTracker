@@ -14,7 +14,7 @@
 	#define CFG_LCD
 	#define CFG_GPS
 	#define CFG_SQL
-	#define CFG_GSHEET
+	//#define CFG_GSHEET
 
 	#define STUP_TIME 15000ULL
 
