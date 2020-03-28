@@ -5,7 +5,6 @@
 #endif
 
 #include <Arduino.h>
-#include "SoftwareSerial.h"
 #include "BluetoothSerial.h" //Header File for Serial Bluetooth, will be added by default into Arduino
 #include "Credentials.h"
 #include "html-content.h"
@@ -71,7 +70,6 @@
 // ***************************** Variables *********************************
 
 BluetoothSerial Serial; 		//Object for Bluetooth
-SoftwareSerial 	SWSerial;
 HardwareSerial 	serialSDS(0);
 HardwareSerial 	serialPMS(1);
 HardwareSerial 	serialGPS(2);
@@ -128,7 +126,6 @@ bool BUT_C_PRESS=false;
 
 bool BUT_DB_CLEAR_FLAG=false;
 
-
 PMmeas SDSmeasPM025;
 PMmeas SDSmeasPM100;
 PMmeas PMSmeasPM010;
@@ -163,20 +160,11 @@ SemaphoreHandle_t I2C_mutex;	// Mutex to access to I2C interface
 // the setup function runs once when you press reset or power the board
 void setup() {
 
+	Serial.begin("ESP32_PMS_Station"); //Name of your Bluetooth Signal
+
 	serialSDS.begin(9600, SERIAL_8N1, PM_SERIAL_RX,  PM_SERIAL_TX);			 		// for HW UART SDS
 	serialPMS.begin(9600, SERIAL_8N1, PM2_SERIAL_RX, PM2_SERIAL_TX);			 	// for HW UART PMS
 	serialGPS.begin(9600, SERIAL_8N1, GPS_SERIAL_RX, GPS_SERIAL_TX);			 	// for HW UART GPS
-
-
-	// initialize serial communication at 115200 bits per second:
-	SWSerial.begin(9600, SWSERIAL_8N1, DEB_RX, DEB_TX, false, 95, 11);
-	SWSerial.println(F("SW serial started"));
-
-	Serial.begin("ESP32_PMS_Station"); //Name of your Bluetooth Signal
-	debug_out(F("SW serial started"), DEBUG_MED_INFO, 1);
-
-	SWSerial.println("Bluetooth Device is Ready to Pair");
-
 
 	// Configure buttons
 	pinMode(BUT_1, INPUT_PULLUP);
@@ -438,9 +426,6 @@ void TaskDiagLevel(void *pvParameters)  // This is a task.
 			if (incoming >= 49 && incoming <= 53 )
 			{
 				incoming -= 48;
-
-				SWSerial.print("Deb lvl:");
-				SWSerial.println(incoming );
 
 				cfg::debug = incoming;
 			}
