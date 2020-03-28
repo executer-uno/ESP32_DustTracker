@@ -147,6 +147,9 @@ void TaskKeyboard( void *pvParameters );
 void TaskArchiveMeas( void *pvParameters );
 void TaskDisplay( void *pvParameters );
 
+static TaskHandle_t xTaskDisplay_handle = NULL;
+static TaskHandle_t xTaskArchiveMeas_handle = NULL;
+
 UBaseType_t uxHighWaterMark_TaskBlink;
 UBaseType_t uxHighWaterMark_TaskReadSensors;
 UBaseType_t uxHighWaterMark_TaskDiagLevel;
@@ -365,7 +368,7 @@ void setup() {
     ,  1024*8 // Stack size
     ,  NULL
     ,  1  // Priority
-    ,  NULL
+    ,  &xTaskArchiveMeas_handle
     ,  ARDUINO_RUNNING_CORE);
 
   xTaskCreatePinnedToCore(
@@ -374,7 +377,7 @@ void setup() {
     ,  2048  // Stack size
     ,  NULL
     ,  2  // Priority
-    ,  NULL
+    ,  &xTaskDisplay_handle
     ,  ARDUINO_RUNNING_CORE);
 
   // Now the task scheduler, which takes over control of scheduling individual tasks, is automatically started.
@@ -418,7 +421,7 @@ void TaskBlink(void *pvParameters)  // This is a task.
 
     uxHighWaterMark_TaskBlink = uxTaskGetStackHighWaterMark( NULL );
   }
-
+  vTaskDelete( NULL );
 }
 
 void TaskDiagLevel(void *pvParameters)  // This is a task.
@@ -446,6 +449,7 @@ void TaskDiagLevel(void *pvParameters)  // This is a task.
     vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
     uxHighWaterMark_TaskDiagLevel = uxTaskGetStackHighWaterMark( NULL );
   }
+  vTaskDelete( NULL );
 }
 
 
@@ -455,6 +459,8 @@ void TaskArchiveMeas(void *pvParameters)  // This is a task.
 
   for (;;) // A Task shall never return or exit.
   {
+      uxHighWaterMark_TaskArchiveMeas = uxTaskGetStackHighWaterMark( NULL );
+
 	  vTaskDelay(60000);  // one tick delay (1ms) in between reads for stability
 
 	  if(BUT_DB_CLEAR_FLAG){
@@ -479,35 +485,59 @@ void TaskArchiveMeas(void *pvParameters)  // This is a task.
 		  Store2DB();
 	  }
 
-      uxHighWaterMark_TaskArchiveMeas = uxTaskGetStackHighWaterMark( NULL );
   }
+  vTaskDelete( NULL );
 }
 
 void TaskDisplay(void *pvParameters)  // This is a task.
 {
-  (void) pvParameters;
+	(void) pvParameters;
+	uint32_t ulNotificationValue;
 
-  for (;;) // A Task shall never return or exit.
-  {
-	  if(SDSmeasPM025.status == SensorSt::ok && PMSmeasPM025.status == SensorSt::ok){
+	for (;;) // A Task shall never return or exit.
+	{
+		#ifdef CFG_LCD
+			/*****************************************************************
+			* display values																								*
+			*****************************************************************/
+			display_values();
+		#endif
 
-	  }
-	  #ifdef CFG_LCD
-		  /*****************************************************************
-		  * display values																								*
-		  *****************************************************************/
-		  display_values();
-	  #endif
-	  vTaskDelay(1000);  // one tick delay (1ms) in between reads for stability
+		/* Wait to be notified that the transmission is complete.  Note the first
+		parameter is pdTRUE, which has the effect of clearing the task's notification
+		value back to 0, making the notification value act like a binary (rather than
+		a counting) semaphore.  */
 
-      uxHighWaterMark_TaskDisplay = uxTaskGetStackHighWaterMark( NULL );
-  }
+		ulNotificationValue = ulTaskNotifyTake( pdTRUE, pdMS_TO_TICKS( 2000 ) );
+
+		if( ulNotificationValue == 1 )
+		{
+			/* The transmission ended as expected. */
+			debug_out(F("DISPLAY: refresh by Notification"), 	DEBUG_WARNING, 1);
+		}
+		else
+		{
+			/* The call to ulTaskNotifyTake() timed out. */
+			debug_out(F("DISPLAY: refresh by timeout"), 		DEBUG_MAX_INFO, 1);
+		}
+
+
+
+		uxHighWaterMark_TaskDisplay = uxTaskGetStackHighWaterMark( NULL );
+	}
+	vTaskDelete( NULL );
 }
 
 
 void TaskKeyboard(void *pvParameters)  // This is a task.
 {
   (void) pvParameters;
+  TickType_t xLastWakeTime;
+  const TickType_t xFrequency = 50;
+
+  // Initialize the xLastWakeTime variable with the current time.
+  xLastWakeTime = xTaskGetTickCount ();
+
 
   for (;;) // A Task shall never return or exit.
   {
@@ -519,6 +549,7 @@ void TaskKeyboard(void *pvParameters)  // This is a task.
 	{
 		debug_out(F("Button Left"), 	DEBUG_WARNING, 1);
 		next_display_count--;
+		xTaskNotifyGive(xTaskDisplay_handle);
 	}
 
 	if (BUT_B && !BUT_B_PRESS)
@@ -530,16 +561,19 @@ void TaskKeyboard(void *pvParameters)  // This is a task.
 	{
 		debug_out(F("Button Center"), 	DEBUG_WARNING, 1);
 		next_display_count++;
+		xTaskNotifyGive(xTaskDisplay_handle);
 	}
 
 	BUT_A_PRESS = BUT_A;
 	BUT_B_PRESS = BUT_B;
 	BUT_C_PRESS = BUT_C;
 
-    vTaskDelay(5);  // one tick delay (1ms) in between reads for stability
+    // Wait for the next cycle.
+    vTaskDelayUntil( &xLastWakeTime, xFrequency );
 
     uxHighWaterMark_TaskKeyboard = uxTaskGetStackHighWaterMark( NULL );
   }
+  vTaskDelete( NULL );
 }
 
 
@@ -550,16 +584,17 @@ void TaskReadSensors(void *pvParameters)  // This is a task.
   for (;;)
   {
 	sensorPMS();
-    vTaskDelay(200);  // one tick delay (1ms) in between reads for stability
+    vTaskDelay(150);  // one tick delay (1ms) in between reads for stability
     sensorSDS();
-    vTaskDelay(200);  // one tick delay (1ms) in between reads for stability
+    vTaskDelay(150);  // one tick delay (1ms) in between reads for stability
     sensorBME280();
-    vTaskDelay(200);  // one tick delay (1ms) in between reads for stability
+    vTaskDelay(150);  // one tick delay (1ms) in between reads for stability
     sensorGPS();
-    vTaskDelay(200);  // one tick delay (1ms) in between reads for stability
+    vTaskDelay(150);  // one tick delay (1ms) in between reads for stability
 
     uxHighWaterMark_TaskReadSensors = uxTaskGetStackHighWaterMark( NULL );
   }
+  vTaskDelete( NULL );
 }
 
 
