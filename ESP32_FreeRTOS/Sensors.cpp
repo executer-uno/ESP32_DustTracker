@@ -337,10 +337,10 @@ void sensorPMS() {
 			len++;
 			if (len == frame_len) {
 
-				debug_out(FPSTR(DBG_TXT_CHECKSUM_IS), 		DEBUG_MED_INFO, 0);
-				debug_out(String(checksum_is + 143), 		DEBUG_MED_INFO, 0);
-				debug_out(FPSTR(DBG_TXT_CHECKSUM_SHOULD), 	DEBUG_MED_INFO, 0);
-				debug_out(String(checksum_should), 			DEBUG_MED_INFO, 1);
+				debug_out(FPSTR(DBG_TXT_CHECKSUM_IS), 		DEBUG_MAX_INFO, 0);
+				debug_out(String(checksum_is + 143), 		DEBUG_MAX_INFO, 0);
+				debug_out(FPSTR(DBG_TXT_CHECKSUM_SHOULD), 	DEBUG_MAX_INFO, 0);
+				debug_out(String(checksum_should), 			DEBUG_MAX_INFO, 1);
 
 				if (checksum_should == (checksum_is + 143)) {
 					checksum_ok = 1;

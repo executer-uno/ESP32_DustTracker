@@ -16,12 +16,13 @@
 	#define CFG_SQL
 	#define CFG_GSHEET
 
-	#define STUP_TIME 10000ULL
+	#define STUP_TIME 15000ULL
 
 	// Build in LED
 	#define LED_BUILTIN 2
 
 	// Definition der Debuglevel
+	#define DEBUG_ALWAYS 	0
 	#define DEBUG_ERROR 	1
 	#define DEBUG_WARNING 	2
 	#define DEBUG_MIN_INFO 	3
@@ -135,5 +136,6 @@
 
 	void display_values();
 	void debug_out(const String& text, const int level, const bool linebreak);
+	void debug_out_from_ISR(const String& text, const int level, const bool linebreak);
 
 #endif /* DEFINITIONS_H_ */

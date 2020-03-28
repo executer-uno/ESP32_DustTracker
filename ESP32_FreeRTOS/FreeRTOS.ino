@@ -155,10 +155,13 @@ UBaseType_t uxHighWaterMark_TaskArchiveMeas;
 UBaseType_t uxHighWaterMark_TaskDisplay;
 
 SemaphoreHandle_t I2C_mutex;	// Mutex to access to I2C interface
-
+SemaphoreHandle_t Serial_mutex;	// Mutex to access to Serial RS232 interface
 
 // the setup function runs once when you press reset or power the board
 void setup() {
+	I2C_mutex 		= xSemaphoreCreateMutex();
+	Serial_mutex 	= xSemaphoreCreateMutex();
+
 
 	Serial.begin("ESP32_PMS_Station"); //Name of your Bluetooth Signal
 
@@ -174,7 +177,6 @@ void setup() {
  	// initialize digital LED_BUILTIN as an output.
 	pinMode(LED_BUILTIN, OUTPUT);
 
-	I2C_mutex = xSemaphoreCreateMutex();
 	#ifdef CFG_LCD
 		/*****************************************************************
 		 * Init OLED display																						 *
@@ -186,9 +188,9 @@ void setup() {
 	#endif
 	#ifdef CFG_BME280
 		if (cfg::bme280_read) {
-			debug_out(F("Read BME280..."), DEBUG_MIN_INFO, 1);
+			debug_out_from_ISR(F("Read BME280..."), DEBUG_MIN_INFO, 1);
 			if (!initBME280(0x76) && !initBME280(0x77)) {
-				debug_out(F("Check BME280 wiring"), DEBUG_MIN_INFO, 1);
+				debug_out_from_ISR(F("Check BME280 wiring"), DEBUG_MIN_INFO, 1);
 			}
 			else{
 				BMEmeasH.status = SensorSt::ok;
@@ -202,42 +204,56 @@ void setup() {
 	#endif
 
 	#ifdef CFG_SQL
+
+		// time to connect to bluetooth
+		for(int del=10; del>0; del--){
+			digitalWrite(LED_BUILTIN, HIGH);    // turn the LED ON by making the voltage HIGH
+			delay(500);
+			yield();
+			digitalWrite(LED_BUILTIN, LOW );
+			Serial.println(del);
+			delay(500);
+			yield();
+		}
+		Serial.println("Setup SQL...");
+
+		yield();
 		SD.begin();
 		if(!SD.begin()){
-			debug_out(F("Card Mount Failed."),							DEBUG_ERROR, 1);
+			debug_out_from_ISR(F("Card Mount Failed."),					DEBUG_ALWAYS, 1);
 		}
 		uint8_t cardType = SD.cardType();
 
 		if(cardType == CARD_NONE){
-			debug_out(F("No SD card attached."),						DEBUG_ERROR, 1);
+			debug_out_from_ISR(F("No SD card attached."),				DEBUG_ALWAYS, 1);
 		}
 		else
 		{
-			debug_out(F("SD Card Type: "),						DEBUG_MED_INFO, 0);
+			debug_out_from_ISR(F("SD Card Type: "),						DEBUG_ALWAYS, 0);
 
 			if(cardType == CARD_MMC){
-					debug_out(F("MMC"),							DEBUG_MED_INFO, 1);
+				debug_out_from_ISR(F("MMC"),							DEBUG_ALWAYS, 1);
 			} else if(cardType == CARD_SD){
-					debug_out(F("SDSC"),						DEBUG_MED_INFO, 1);
+				debug_out_from_ISR(F("SDSC"),							DEBUG_ALWAYS, 1);
 			} else if(cardType == CARD_SDHC){
-					debug_out(F("SDHC"),						DEBUG_MED_INFO, 1);
+				debug_out_from_ISR(F("SDHC"),							DEBUG_ALWAYS, 1);
 			} else {
-					debug_out(F("UNKNOWN"),						DEBUG_MED_INFO, 1);
+				debug_out_from_ISR(F("UNKNOWN"),						DEBUG_ALWAYS, 1);
 			}
 			uint64_t cardSize = SD.cardSize() / (1024 * 1024);
 
-			debug_out("SD Card Size: "+ String(int(cardSize)) 						+ "MB",DEBUG_MED_INFO, 1);
-			debug_out("Total space:  "+ String(int(SD.totalBytes() / (1024 * 1024)))+ "MB",DEBUG_MED_INFO, 1);
-			debug_out("Used space:   "+ String(int(SD.usedBytes() / (1024 * 1024)))	+ "MB",DEBUG_MED_INFO, 1);
+			debug_out_from_ISR("SD Card Size: "+ String(int(cardSize)) 						+ "MB",DEBUG_ALWAYS, 1);
+			debug_out_from_ISR("Total space:  "+ String(int(SD.totalBytes() / (1024 * 1024)))+ "MB",DEBUG_ALWAYS, 1);
+			debug_out_from_ISR("Used space:   "+ String(int(SD.usedBytes() / (1024 * 1024)))	+ "MB",DEBUG_ALWAYS, 1);
 
 			File root = SD.open("/");
 			if (!root) {
-				debug_out(F("- failed to open directory"),		DEBUG_ERROR, 1);
+				debug_out_from_ISR(F("- failed to open directory"),		DEBUG_ERROR, 1);
 			}
 			else
 			{
 				if (!root.isDirectory()) {
-					debug_out(F("- not a directory"),			DEBUG_ERROR, 1);
+					debug_out_from_ISR(F("- not a directory"),			DEBUG_ERROR, 1);
 				}
 				else
 				{
@@ -249,39 +265,39 @@ void setup() {
 
 						rc = db_exec(db, "PRAGMA page_size = 512;");
 						if (rc != SQLITE_OK) {
-							 Serial.println("PRAGMA page_size set failure");
+							debug_out_from_ISR(F("PRAGMA page_size set failure"),							DEBUG_ERROR, 1);
 						}
 
 						rc = db_exec(db, "PRAGMA default_cache_size = 200; PRAGMA cache_size = 200;");
 						if (rc != SQLITE_OK) {
-							 Serial.println("PRAGMA default_cache_size set failure");
+							debug_out_from_ISR(F("PRAGMA default_cache_size set failure"),					DEBUG_ERROR, 1);
 						}
 
 						rc = db_exec(db, "CREATE TABLE IF NOT EXISTS measBME (datetime, sendGS BOOL, sendAD BOOL, temp REAL, press REAL, humid REAL);");
 						if (rc != SQLITE_OK) {
 							 sqlite3_close(db);
-							 Serial.println("Table measurements 'measBME' creation failure");
+							 debug_out_from_ISR(F("Table measurements 'measBME' creation failure"),			DEBUG_ERROR, 1);
 							 return;
 						}
 
 						rc = db_exec(db, "CREATE TABLE IF NOT EXISTS measPMS (datetime, sendGS BOOL, sendAD BOOL, PM010 REAL, PM025 REAL, PM100 REAL);");
 						if (rc != SQLITE_OK) {
 							 sqlite3_close(db);
-							 Serial.println("Table measurements 'measPMS' creation failure");
+							 debug_out_from_ISR(F("Table measurements 'measPMS' creation failure"),			DEBUG_ERROR, 1);
 							 return;
 						}
 
 						rc = db_exec(db, "CREATE TABLE IF NOT EXISTS measSDS (datetime, sendGS BOOL, sendAD BOOL, PM025 REAL, PM100 REAL);");
 						if (rc != SQLITE_OK) {
 							 sqlite3_close(db);
-							 Serial.println("Table measurements 'measSDS' creation failure");
+							 debug_out_from_ISR(F("Table measurements 'measSDS' creation failure"),			DEBUG_ERROR, 1);
 							 return;
 						}
 
 						rc = db_exec(db, "CREATE TABLE IF NOT EXISTS measGPS (datetime, sendGS BOOL, sendAD BOOL, lat REAL, lon REAL);");
 						if (rc != SQLITE_OK) {
 							 sqlite3_close(db);
-							 Serial.println("Table measurements 'measGPS' creation failure");
+							 debug_out_from_ISR(F("Table measurements 'measGPS' creation failure"),			DEBUG_ERROR, 1);
 							 return;
 						}
 
@@ -290,13 +306,13 @@ void setup() {
 						if (sqlite3_prepare_v2(db, sql, -1, &res, NULL) != SQLITE_OK) {
 								String resp = "Failed to fetch data: ";
 								resp += sqlite3_errmsg(db);
-								Serial.println(resp);
+								debug_out_from_ISR(resp,													DEBUG_ERROR, 1);
 						}
 						else {
 							if (sqlite3_step(res) != SQLITE_ROW) {
 									String resp = "Step failure: ";
 									resp += sqlite3_errmsg(db);
-									Serial.println(resp);
+									debug_out_from_ISR(resp,												DEBUG_ERROR, 1);
 							}
 							else {
 									rec_count = sqlite3_column_int(res, 0);
@@ -326,7 +342,7 @@ void setup() {
   xTaskCreatePinnedToCore(
     TaskReadSensors
     ,  "ReadSDSPMS"
-    ,  2048 +1024  // Stack size
+    ,  2048 +1024 // Stack size
     ,  NULL
     ,  2  // Priority
     ,  NULL
@@ -353,7 +369,7 @@ void setup() {
   xTaskCreatePinnedToCore(
 	TaskArchiveMeas
     ,  "CyclicArcive"
-    ,  1024*8 // Stack size
+    ,  1024*5 // Stack size
     ,  NULL
     ,  1  // Priority
     ,  &xTaskArchiveMeas_handle
@@ -414,27 +430,25 @@ void TaskBlink(void *pvParameters)  // This is a task.
 
 void TaskDiagLevel(void *pvParameters)  // This is a task.
 {
-  (void) pvParameters;
+	(void) pvParameters;
 
-  for (;;) // A Task shall never return or exit.
-  {
-		if (Serial.available()) //Check if we receive anything from Bluetooth
-		{
+	for (;;){ // A Task shall never return or exit.
+		xSemaphoreTake(Serial_mutex, portMAX_DELAY);
+		if (Serial.available()){ //Check if we receive anything from Bluetooth
 			int incoming;
 			incoming = Serial.read(); //Read what we receive
 
-			if (incoming >= 49 && incoming <= 53 )
-			{
+			if (incoming >= 49 && incoming <= 53 ){
 				incoming -= 48;
-
 				cfg::debug = incoming;
 			}
-
 		}
-    vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
-    uxHighWaterMark_TaskDiagLevel = uxTaskGetStackHighWaterMark( NULL );
-  }
-  vTaskDelete( NULL );
+		xSemaphoreGive(Serial_mutex);
+
+		vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
+		uxHighWaterMark_TaskDiagLevel = uxTaskGetStackHighWaterMark( NULL );
+	  }
+	  vTaskDelete( NULL );
 }
 
 
@@ -992,7 +1006,8 @@ bool initGPS() {
 
 	char *zErrMsg = 0;
 	int db_exec(sqlite3 *db, const char *sql) {
-		 Serial.println(sql);
+		 debug_out("db_exec: " + String(sql), 					DEBUG_MED_INFO, 1);
+
 		 long start = micros();
 		 int rc = sqlite3_exec(db, sql, callback, (void*)data, &zErrMsg);
 		 if (rc != SQLITE_OK) {
