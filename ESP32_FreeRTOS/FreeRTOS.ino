@@ -60,7 +60,7 @@
 		 test or else use the SPIFFS plugin to create a partition
 		 https://github.com/me-no-dev/arduino-esp32fs-plugin */
 	#define FORMAT_SPIFFS_IF_FAILED true
-	#define DB_PATH "/sd/DB_portable02.db"
+	#define DB_PATH "/sd/DB_portable03.db"
 
 	sqlite3 	*db;
 	int 		rc;
@@ -195,21 +195,6 @@ void setup() {
 
 	Serial.begin("ESP32_PMS_Station"); //Name of your Bluetooth Signal
 
-	// time to connect to bluetooth
-	for(int del=4; del>0; del--){
-		digitalWrite(LED_BUILTIN, HIGH);    // turn the LED ON by making the voltage HIGH
-		delay(500);
-		yield();
-		digitalWrite(LED_BUILTIN, LOW );
-		Serial.println(del);
-		delay(500);
-		yield();
-	}
-
-	serialSDS.begin(9600, SERIAL_8N1, PM_SERIAL_RX,  PM_SERIAL_TX);			 		// for HW UART SDS
-	serialPMS.begin(9600, SERIAL_8N1, PM2_SERIAL_RX, PM2_SERIAL_TX);			 	// for HW UART PMS
-	serialGPS.begin(9600, SERIAL_8N1, GPS_SERIAL_RX, GPS_SERIAL_TX);			 	// for HW UART GPS
-
 	#ifdef CFG_LCD
 		/*****************************************************************
 		 * Init OLED display																						 *
@@ -218,7 +203,38 @@ void setup() {
 		//display.mirrorScreen();
 		display.flipScreenVertically();
 
+		// Boot screen
+		display.displayOn();
+		display.setTextAlignment(TEXT_ALIGN_CENTER);
+
+		display.drawString(64, 0, "Bluetooth terminal ready");
+		display.setTextAlignment(TEXT_ALIGN_LEFT);
+		display.drawString(0, 13, "BT Device name:");
+		display.drawString(0, 25, "ESP32_PMS_Station");
 	#endif
+
+
+
+
+	// time to connect to bluetooth
+	String progress = "";
+	for(int del=0; del<42; del++){
+
+		digitalWrite(LED_BUILTIN, HIGH);    // turn the LED ON by making the voltage HIGH
+		delay(100);
+		yield();
+		digitalWrite(LED_BUILTIN, LOW );
+		delay(100);
+		progress += ".";
+		display.drawString(0, 37, progress);
+		display.display();
+	}
+
+	serialSDS.begin(9600, SERIAL_8N1, PM_SERIAL_RX,  PM_SERIAL_TX);			 		// for HW UART SDS
+	serialPMS.begin(9600, SERIAL_8N1, PM2_SERIAL_RX, PM2_SERIAL_TX);			 	// for HW UART PMS
+	serialGPS.begin(9600, SERIAL_8N1, GPS_SERIAL_RX, GPS_SERIAL_TX);			 	// for HW UART GPS
+
+
 	#ifdef CFG_BME280
 		if (cfg::bme280_read) {
 			debug_out(F("Read BME280..."), DEBUG_MIN_INFO, 1);
@@ -451,7 +467,7 @@ bool GetDB_Count(const char *sql, int64_t &count){
 	return result;
 }
 
-bool GetDB_Data(const char *sql, String &DateTime, String &columns){
+bool GetDB_Data(const char *sql, String &firstCol, String &otherCol){
 
 	bool result = true;
 
@@ -470,13 +486,13 @@ bool GetDB_Data(const char *sql, String &DateTime, String &columns){
 		}
 		else {
 
-			DateTime = (char*)sqlite3_column_text(res, 0);
+			firstCol = sqlite3_column_int(res, 0);
 
-			columns  = "";
-			columns += String((char*)sqlite3_column_text(res, 1)) + ",";
-			columns += String((char*)sqlite3_column_text(res, 2)) + ",";
-			columns += String((char*)sqlite3_column_text(res, 3)) + ",";
-			columns += String((char*)sqlite3_column_text(res, 4));
+			otherCol  = "";
+			otherCol += String((char*)sqlite3_column_text(res, 1)) + ",";
+			otherCol += String((char*)sqlite3_column_text(res, 2)) + ",";
+			otherCol += String((char*)sqlite3_column_text(res, 3)) + ",";
+			otherCol += String((char*)sqlite3_column_text(res, 4));
 
 			result = false;
 			sqlite3_finalize(res);
@@ -515,7 +531,7 @@ void TaskBlink(void *pvParameters)  // This is a task.
     digitalWrite(LED_BUILTIN, LOW);    	// turn the LED off by making the voltage LOW
 
     if(SDSmeasPM025.status == SensorSt::ok && PMSmeasPM025.status == SensorSt::ok){
-    	vTaskDelay(1000);  // one tick delay (1ms) in between reads for stability
+    	vTaskDelay(5000);  // one tick delay (1ms) in between reads for stability
     }
     else{
     	vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
@@ -524,21 +540,20 @@ void TaskBlink(void *pvParameters)  // This is a task.
 //	#ifdef CFG_GSHEET
 	#ifdef CFG_SQL
 
-    	String data_4_custom 	= "";
-		String sql				= "";
+    	String  data_4_custom 	= "";
+		String  sql				= "";
 		int64_t	rec_count64		= 0;
 
     	xSemaphoreTake(SQL_mutex, portMAX_DELAY);
     	if (!db_open(DB_PATH, &db))
     	{
     		// Check if anything in database to be sent?
-    		sql = "SELECT COUNT(*) FROM measSDS WHERE sendGS IS NULL";
+    		sql = "SELECT COUNT(*) FROM timestamps WHERE sendGS IS NULL";
 
 			if(!GetDB_Count(sql.c_str(), rec_count64)){
 				rec_count = rec_count64;
 				debug_out("Count measSDS records = " + String(rec_count),		DEBUG_MED_INFO, 1);
 				if(rec_count){
-					String sql			= "";
 
 					String DateTime 	= "";
 					String DateTimeTMP 	= "";
@@ -548,144 +563,146 @@ void TaskBlink(void *pvParameters)  // This is a task.
 					String MeasGPS		= "";
 					String MeasBME		= "";
 
-					sql = "SELECT datetime, PM100, PM025        FROM measSDS WHERE sendGS IS NULL                                 ORDER BY datetime ASC LIMIT 1";
-					GetDB_Data(sql.c_str(), DateTime	, MeasSDS);
+					String RowID		= "";
 
-					sql = "SELECT datetime, PM100, PM025, PM010 FROM measPMS WHERE sendGS IS NULL AND datetime='" + DateTime + "' ORDER BY datetime ASC LIMIT 1";
-					GetDB_Data(sql.c_str(), DateTimeTMP	, MeasPMS);
+					sql = "SELECT datetime, Id FROM timestamps WHERE sendGS IS NULL ORDER BY datetime ASC LIMIT 1";
+					GetDB_Data(sql.c_str(), DateTime	, RowID);
 
-					sql = "SELECT datetime, temp, humid, press  FROM measBME WHERE sendGS IS NULL AND datetime='" + DateTime + "' ORDER BY datetime ASC LIMIT 1";
-					GetDB_Data(sql.c_str(), DateTimeTMP	, MeasBME);
+					RowID.replace(",", "");
+					RowID.trim();
 
-					sql = "SELECT datetime, lat, lon            FROM measGPS WHERE sendGS IS NULL AND datetime='" + DateTime + "' ORDER BY datetime ASC LIMIT 1";
-					GetDB_Data(sql.c_str(), DateTimeTMP	, MeasGPS);
+					debug_out("Data from timestamps DB: " + RowID + ":" + DateTime,			DEBUG_ALWAYS, 1);
 
-					debug_out("Data from measSDS DB:" + DateTime    +",  "+ MeasSDS,	DEBUG_ALWAYS, 1);
-					debug_out("Data from measPMS DB:" + DateTimeTMP +",  "+ MeasPMS,	DEBUG_ALWAYS, 1);
-					debug_out("Data from measBME DB:" + DateTimeTMP +",  "+ MeasBME,	DEBUG_ALWAYS, 1);
-					debug_out("Data from measGPS DB:" + DateTimeTMP +",  "+ MeasGPS,	DEBUG_ALWAYS, 1);
+					if(RowID){
 
-					// Send data
-					// ....
-					// ....
+						sql = "SELECT PM100, PM025        FROM measSDS WHERE Id='" + RowID + "' LIMIT 1";
+						GetDB_Data(sql.c_str(), DateTime	, MeasSDS);
 
-					sql = "UPDATE measSDS SET sendGS = 1 WHERE datetime='" + DateTime + "';";
-					GetDB_Data(sql.c_str(), DateTimeTMP	, MeasSDS);
+						sql = "SELECT PM100, PM025, PM010 FROM measPMS WHERE Id='" + RowID + "' LIMIT 1";
+						GetDB_Data(sql.c_str(), DateTimeTMP	, MeasPMS);
 
-					sql = "UPDATE measPMS SET sendGS = 1 WHERE datetime='" + DateTime + "';";
-					GetDB_Data(sql.c_str(), DateTimeTMP	, MeasSDS);
+						sql = "SELECT temp, humid, press  FROM measBME WHERE Id='" + RowID + "' LIMIT 1";
+						GetDB_Data(sql.c_str(), DateTimeTMP	, MeasBME);
 
-					sql = "UPDATE measBME SET sendGS = 1 WHERE datetime='" + DateTime + "';";
-					GetDB_Data(sql.c_str(), DateTimeTMP	, MeasSDS);
+						sql = "SELECT lat, lon            FROM measGPS WHERE Id='" + RowID + "' LIMIT 1";
+						GetDB_Data(sql.c_str(), DateTimeTMP	, MeasGPS);
 
-					sql = "UPDATE measGPS SET sendGS = 1 WHERE datetime='" + DateTime + "';";
-					GetDB_Data(sql.c_str(), DateTimeTMP	, MeasSDS);
+						debug_out("Data from measSDS DB:" + MeasSDS,						DEBUG_ALWAYS, 1);
+						debug_out("Data from measPMS DB:" + MeasPMS,						DEBUG_ALWAYS, 1);
+						debug_out("Data from measBME DB:" + MeasBME,						DEBUG_ALWAYS, 1);
+						debug_out("Data from measGPS DB:" + MeasGPS,						DEBUG_ALWAYS, 1);
 
+						// Send data
+						// ....
+						// ....
 
-
-						/*		String data = FPSTR(data_first_part);
-								data.replace("{v}", SOFTWARE_VERSION);
-
-								rowid = sqlite3_column_int64(res,0);
-								Serial.printf("Retrived rowid=%ld\r\n",	rowid);
-
-								// GPS data
-								data += Var2Json(F("datetime"),						sqlite3_column_int(res, 1));
-								data += Var2Json(F("GPS_lat"),						sqlite3_column_double(res, 2));
-								data += Var2Json(F("GPS_lon"),						sqlite3_column_double(res, 3));
-
-								data += Var2Json(F("BME280_pressure"),				sqlite3_column_double(res, 4));
-								data += Var2Json(F("BME280_temperature"), 			sqlite3_column_double(res, 5));
-								data += Var2Json(F("BME280_humidity"), 				sqlite3_column_double(res, 6));
-
-								data += Var2Json(F("SDS_P1"),						sqlite3_column_double(res, 7));
-								data += Var2Json(F("SDS_P2"),						sqlite3_column_double(res, 8));
-
-								data += Var2Json(F("PMS_P1"),						sqlite3_column_double(res, 9));
-								data += Var2Json(F("PMS_P2"),						sqlite3_column_double(res,10));
-
-								data += "]}";
+						sql = "UPDATE timestamps SET sendGS = 1 WHERE Id='" + RowID + "';";
+						GetDB_Data(sql.c_str(), DateTimeTMP	, MeasSDS);							// Mark record as sended
 
 
+						/*	String data = FPSTR(data_first_part);
+							data.replace("{v}", SOFTWARE_VERSION);
 
+							rowid = sqlite3_column_int64(res,0);
+							Serial.printf("Retrived rowid=%ld\r\n",	rowid);
 
+							// GPS data
+							data += Var2Json(F("datetime"),						sqlite3_column_int(res, 1));
+							data += Var2Json(F("GPS_lat"),						sqlite3_column_double(res, 2));
+							data += Var2Json(F("GPS_lon"),						sqlite3_column_double(res, 3));
 
-								// prepare for googlesheet script
-								data.remove(0, 1);
-								data = "{\"espid\": \"" + String(esp_chipid) + "\", \"count_sends\": \"" + "DB" + "\"," + data + "}";
-								data.replace("\"sensordatavalues\":[", "\"sensordatavalues\":{");
-								data.replace("}","");
-								data.replace("]","");
-								data = data + "\"Heap_Siz\":"+String(ESP.getHeapSize())+",\"Heap_Free\":"+String(esp_get_free_heap_size())+",\"Heap_MinFree\":"+String(esp_get_minimum_free_heap_size())+",\"Heap_MaxAlloc\":"+String(ESP.getMaxAllocHeap());
-								data = data + "}}}";
+							data += Var2Json(F("BME280_pressure"),				sqlite3_column_double(res, 4));
+							data += Var2Json(F("BME280_temperature"), 			sqlite3_column_double(res, 5));
+							data += Var2Json(F("BME280_humidity"), 				sqlite3_column_double(res, 6));
 
-								debug_out(F("Send from buffer to spreadsheet"), DEBUG_MIN_INFO, 1);
-								payload = payload_base + data;
+							data += Var2Json(F("SDS_P1"),						sqlite3_column_double(res, 7));
+							data += Var2Json(F("SDS_P2"),						sqlite3_column_double(res, 8));
+
+							data += Var2Json(F("PMS_P1"),						sqlite3_column_double(res, 9));
+							data += Var2Json(F("PMS_P2"),						sqlite3_column_double(res,10));
+
+							data += "]}";
 
 
 
-										if (client != nullptr){
-											if (!client->connected()){
 
-												// Try to connect for a maximum of 3 times
-												for (int i=0; i<3; i++){
-													int retval = client->connect(host, httpsPort);
-													if (retval == 1) {
-														 break;
-													}
-													else {
-														debug_out(F("Connection failed. Retrying..."), DEBUG_MIN_INFO, 1);
-														Serial.println(client->getResponseBody() );
-														error_count++;
-													}
+
+							// prepare for googlesheet script
+							data.remove(0, 1);
+							data = "{\"espid\": \"" + String(esp_chipid) + "\", \"count_sends\": \"" + "DB" + "\"," + data + "}";
+							data.replace("\"sensordatavalues\":[", "\"sensordatavalues\":{");
+							data.replace("}","");
+							data.replace("]","");
+							data = data + "\"Heap_Siz\":"+String(ESP.getHeapSize())+",\"Heap_Free\":"+String(esp_get_free_heap_size())+",\"Heap_MinFree\":"+String(esp_get_minimum_free_heap_size())+",\"Heap_MaxAlloc\":"+String(ESP.getMaxAllocHeap());
+							data = data + "}}}";
+
+							debug_out(F("Send from buffer to spreadsheet"), DEBUG_MIN_INFO, 1);
+							payload = payload_base + data;
+
+
+
+									if (client != nullptr){
+										if (!client->connected()){
+
+											// Try to connect for a maximum of 3 times
+											for (int i=0; i<3; i++){
+												int retval = client->connect(host, httpsPort);
+												if (retval == 1) {
+													 break;
+												}
+												else {
+													debug_out(F("Connection failed. Retrying..."), DEBUG_MIN_INFO, 1);
+													Serial.println(client->getResponseBody() );
+													error_count++;
 												}
 											}
+										}
+									}
+									else{
+										debug_out(F("Error creating client object!"), DEBUG_MIN_INFO, 1);
+										error_count++;
+									}
+									if (!client->connected()){
+										debug_out(F("Connection failed. Stand by till next period"), DEBUG_MIN_INFO, 1);
+									}
+									else
+									{
+
+										if(client->POST(url2, host, payload)){
+											debug_out(F("Spreadsheet updated"), DEBUG_MIN_INFO, 1);
+
+											// Data sent sucesfully. Remove record from DB
+
+											String query = "DELETE FROM measurements where rowid=";
+											query += String(rowid);
+
+											rc = db_exec(db, query.c_str());
+											if (rc != SQLITE_OK) {
+												 Serial.println("Row delete command failed");
+											}
+											else
+											{
+												debug_out(F("Spreadsheet updated sucesfully. Buffer row deleted"), DEBUG_MIN_INFO, 1);
+											}
+
 										}
 										else{
-											debug_out(F("Error creating client object!"), DEBUG_MIN_INFO, 1);
 											error_count++;
+											debug_out(F("Spreadsheet update fails: "), DEBUG_MIN_INFO, 1);
 										}
-										if (!client->connected()){
-											debug_out(F("Connection failed. Stand by till next period"), DEBUG_MIN_INFO, 1);
-										}
-										else
-										{
-
-											if(client->POST(url2, host, payload)){
-												debug_out(F("Spreadsheet updated"), DEBUG_MIN_INFO, 1);
-
-												// Data sent sucesfully. Remove record from DB
-
-												String query = "DELETE FROM measurements where rowid=";
-												query += String(rowid);
-
-												rc = db_exec(db, query.c_str());
-												if (rc != SQLITE_OK) {
-													 Serial.println("Row delete command failed");
-												}
-												else
-												{
-													debug_out(F("Spreadsheet updated sucesfully. Buffer row deleted"), DEBUG_MIN_INFO, 1);
-												}
-
-											}
-											else{
-												error_count++;
-												debug_out(F("Spreadsheet update fails: "), DEBUG_MIN_INFO, 1);
-											}
-										}
+									}
 
 
-											// delete HTTPSRedirect object
-									delete client;
-									client = nullptr;
+										// delete HTTPSRedirect object
+								delete client;
+								client = nullptr;
 
-									Serial.print(F("client object deleted"));
+								Serial.print(F("client object deleted"));
 
-						 */
+					 */
 
 
-
+					}
 
 				}
 			}
