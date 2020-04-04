@@ -8,13 +8,7 @@
 #ifndef DEFINITIONS_H_
 #define DEFINITIONS_H_
 
-	// Config functionality
 
-	#define CFG_BME280
-	#define CFG_LCD
-	#define CFG_GPS
-	#define CFG_SQL
-	//#define CFG_GSHEET
 
 	#define STUP_TIME 15000ULL
 
@@ -81,7 +75,7 @@
 	#define I2C_PIN_SCL OLED_SCL
 	#define I2C_PIN_SDA OLED_SDA
 
-
+	#define SOFTWARE_VERSION "PORT2XBMEGPS01"
 
 	enum class SensorSt {
 		raw,
@@ -91,6 +85,13 @@
 		timeout
 	};
 
+	struct struct_wifiInfo {
+		char ssid[35];
+		uint8_t encryptionType;
+		int32_t RSSI;
+		int32_t channel;
+		bool isHidden;
+	};
 
 	struct measure {
 		float 	max;
@@ -136,5 +137,12 @@
 
 	void display_values();
 	void debug_out(const String& text, const int level, const bool linebreak);
+
+	String Var2Json(const String& name, const String& value);
+	String Var2Json(const String& name, const bool value);
+	String Var2Json(const String& name, const int value);
+	String Var2Json(const String& name, const double value);
+
+	void printLocalTime();
 
 #endif /* DEFINITIONS_H_ */

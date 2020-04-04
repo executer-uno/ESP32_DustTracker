@@ -6,21 +6,24 @@
 
 #endif
 
+	// Config functionality
+	#define CFG_BME280
+	#define CFG_LCD
+	#define CFG_GPS
+	#define CFG_SQL
+	#define CFG_GSHEET
+
 #include <Arduino.h>
 #include "BluetoothSerial.h" //Header File for Serial Bluetooth, will be added by default into Arduino
 #include "html-content.h"
-//#define WLANSSID   "MyWifiName"  //in Credentials.h
-//#define WLANPWD    "MyWiFiPass"  //in Credentials.h
 
-#include "Definitions.h"
-#include "Credentials.h"
-#include "Sensors.h"
+
 
 // *********************** Conditional includes ****************************
 
 #ifdef CFG_LCD
 	// https://www.winstar.com.tw/products/oled-module/graphic-oled-display/color-oled-display.html
-	#include "oledfont.h"				// avoids including the default Arial font, needs to be included before SSD1306.h
+	#include "oledfont.h"							// avoids including the default Arial font, needs to be included before SSD1306.h
 	#include <SSD1306.h>
 	#include <LiquidCrystal_I2C.h>
 	#include "SSD1306Wire.h"
@@ -33,18 +36,39 @@
 #endif
 
 #ifdef CFG_GSHEET
+	#include <WiFi.h>
+	#include "time.h"
+
+	//#include <esp_wifi.h>						 	// must be first
+	//#include <WiFiClient.h>
+	//#include <WiFiClientSecure.h>
 	#include "lib/HTTPSRedirect.h"
+
+	struct struct_wifiInfo *wifiInfo;
+	uint8_t count_wifiInfo;
+
+	const char *GScriptId = GSHEET_ID;
+
+
+
+	const char* ntpServer = "pool.ntp.org";
+	const long  gmtOffset_sec = 3600*2;
+	const int   daylightOffset_sec = 3600;
+
+
+
 #endif
 
 
-#include <FS.h>										 // must be first
 #ifdef CFG_SQL
-	//#include <stdio.h>
-	//#include <stdlib.h>
-	//#include <SPI.h>
+
+
 
 	#include <sqlite3.h>
+	#include <SPI.h>
+	#include <FS.h>
 	#include "SD.h"
+
 /*	Connections:
 		 * SD Card | ESP32
 		 *	DAT2			 -
@@ -65,10 +89,19 @@
 	sqlite3 	*db;
 	int 		rc;
 	sqlite3_stmt *res;
-	int 		rec_count = 0;
+	int 		rec_count 	= 0;
+	int64_t 	RID 		= 0;
+
 #endif
 
+#include "Definitions.h"
+#include "Credentials.h"
+#include "Sensors.h"
 
+#ifndef WLANSSID
+	#define WLANSSID   "MyWifiSSID"  //in Credentials.h
+	#define WLANPWD    "MyWiFiPass"  //in Credentials.h
+#endif
 
 
 // ***************************** Variables *********************************
@@ -77,6 +110,9 @@ BluetoothSerial Serial; 		//Object for Bluetooth
 HardwareSerial 	serialSDS(0);
 HardwareSerial 	serialPMS(1);
 HardwareSerial 	serialGPS(2);
+
+
+
 
 #ifdef CFG_LCD
 	/*****************************************************************
@@ -106,29 +142,29 @@ HardwareSerial 	serialGPS(2);
 #ifdef CFG_GSHEET
 	// For google spreadsheets:
 
+	String esp_chipid = "- - -";
+
 	const char* host = "script.google.com";
 	const int httpsPort = 443;
 	const char* fingerprint = "";
 	int error_count = 0;
 
-	String url = String("/macros/s/") + GScriptId + "/exec?value=Hello";	// Write to Google Spreadsheet
-	String url2 = String("/macros/s/") + GScriptId + "/exec?cal";				 // Fetch Google Calendar events for 1 week ahead
+	String url =  String("/macros/s/") + GScriptId + "/exec?value=Hello";		// Write to Google Spreadsheet
+	String url2 = String("/macros/s/") + GScriptId + "/exec?cal";				// Fetch Google Calendar events for 1 week ahead
 	String url3 = String("/macros/s/") + GScriptId + "/exec?read";				// Read from Google Spreadsheet
 	String payload_base =	"{\"command\": \"appendRow\", \"sheet_name\": \"DATA\", \"values\": ";
 	String payload = "";
 
 	HTTPSRedirect* client = nullptr;
+
+	const char data_first_part[] PROGMEM = "{\"software_version\": \"{v}\", \"sensordatavalues\":[";
+
 #endif
 
 namespace cfg {
 	char wlanssid[35] 	= WLANSSID;
 	char wlanpwd[65] 	= WLANPWD;
 
-	char www_username[65] = WWW_USERNAME;
-	char www_password[65] = WWW_PASSWORD;
-
-	char fs_ssid[33]	= FS_SSID;
-	char fs_pwd[65] 	= FS_PWD;
 	int	debug 			= DEBUG;
 
 	bool sds_read 		= SDS_READ;
@@ -179,6 +215,7 @@ SemaphoreHandle_t Serial_mutex;	// Mutex to access to Serial RS232 interface
 SemaphoreHandle_t SQL_mutex;	// Mutex to access to SQLite database
 
 
+
 // the setup function runs once when you press reset or power the board
 void setup() {
 	I2C_mutex 		= xSemaphoreCreateMutex();
@@ -213,9 +250,6 @@ void setup() {
 		display.drawString(0, 25, "ESP32_PMS_Station");
 	#endif
 
-
-
-
 	// time to connect to bluetooth
 	String progress = "";
 	for(int del=0; del<42; del++){
@@ -234,7 +268,6 @@ void setup() {
 	serialPMS.begin(9600, SERIAL_8N1, PM2_SERIAL_RX, PM2_SERIAL_TX);			 	// for HW UART PMS
 	serialGPS.begin(9600, SERIAL_8N1, GPS_SERIAL_RX, GPS_SERIAL_TX);			 	// for HW UART GPS
 
-
 	#ifdef CFG_BME280
 		if (cfg::bme280_read) {
 			debug_out(F("Read BME280..."), DEBUG_MIN_INFO, 1);
@@ -252,10 +285,11 @@ void setup() {
 		initGPS();
 	#endif
 
+
 	#ifdef CFG_SQL
 
 		yield();
-		SD.begin();
+
 		if(!SD.begin()){
 			debug_out(F("Card Mount Failed."),					DEBUG_ALWAYS, 1);
 		}
@@ -283,95 +317,87 @@ void setup() {
 			debug_out("Total space:  "+ String(int(SD.totalBytes() / (1024 * 1024)))+ "MB",DEBUG_ALWAYS, 1);
 			debug_out("Used space:   "+ String(int(SD.usedBytes() / (1024 * 1024)))	+ "MB",DEBUG_ALWAYS, 1);
 
-			File root = SD.open("/");
-			if (!root) {
-				debug_out(F("- failed to open directory"),		DEBUG_ERROR, 1);
-			}
-			else
-			{
-				if (!root.isDirectory()) {
-					debug_out(F("- not a directory"),			DEBUG_ERROR, 1);
-				}
-				else
+
+			sqlite3_initialize();
+
+			if (!db_open(DB_PATH, &db))
 				{
 
-					sqlite3_initialize();
-
-					if (!db_open(DB_PATH, &db))
-						{
-
-						rc = db_exec(db, "PRAGMA page_size = 512;");
-						if (rc != SQLITE_OK) {
-							debug_out(F("PRAGMA page_size set failure"),							DEBUG_ERROR, 1);
-						}
-
-						rc = db_exec(db, "PRAGMA default_cache_size = 200; PRAGMA cache_size = 200;");
-						if (rc != SQLITE_OK) {
-							debug_out(F("PRAGMA default_cache_size set failure"),					DEBUG_ERROR, 1);
-						}
-
-
-
-						rc = db_exec(db, "CREATE TABLE IF NOT EXISTS timestamps (Id integer PRIMARY KEY, datetime integer, sendGS BOOL, sendAD BOOL);");
-						if (rc != SQLITE_OK) {
-							 sqlite3_close(db);
-							 debug_out(F("Table measurements 'measBME' creation failure"),			DEBUG_ERROR, 1);
-							 return;
-						}
-
-						rc = db_exec(db, "CREATE TABLE IF NOT EXISTS measBME (Id integer PRIMARY KEY, temp REAL, press REAL, humid REAL);");
-						if (rc != SQLITE_OK) {
-							 sqlite3_close(db);
-							 debug_out(F("Table measurements 'measBME' creation failure"),			DEBUG_ERROR, 1);
-							 return;
-						}
-
-						rc = db_exec(db, "CREATE TABLE IF NOT EXISTS measPMS (Id integer PRIMARY KEY, PM010 REAL, PM025 REAL, PM100 REAL);");
-						if (rc != SQLITE_OK) {
-							 sqlite3_close(db);
-							 debug_out(F("Table measurements 'measPMS' creation failure"),			DEBUG_ERROR, 1);
-							 return;
-						}
-
-						rc = db_exec(db, "CREATE TABLE IF NOT EXISTS measSDS (Id integer PRIMARY KEY, PM025 REAL, PM100 REAL);");
-						if (rc != SQLITE_OK) {
-							 sqlite3_close(db);
-							 debug_out(F("Table measurements 'measSDS' creation failure"),			DEBUG_ERROR, 1);
-							 return;
-						}
-
-						rc = db_exec(db, "CREATE TABLE IF NOT EXISTS measGPS (Id integer PRIMARY KEY, lat REAL, lon REAL);");
-						if (rc != SQLITE_OK) {
-							 sqlite3_close(db);
-							 debug_out(F("Table measurements 'measGPS' creation failure"),			DEBUG_ERROR, 1);
-							 return;
-						}
-
-						// get actual number of records to variable
-						const char *sql = "Select count(*) from measurements";
-						if (sqlite3_prepare_v2(db, sql, -1, &res, NULL) != SQLITE_OK) {
-								String resp = "Failed to fetch data: ";
-								resp += sqlite3_errmsg(db);
-								debug_out(resp,													DEBUG_ERROR, 1);
-						}
-						else {
-							if (sqlite3_step(res) != SQLITE_ROW) {
-									String resp = "Step failure: ";
-									resp += sqlite3_errmsg(db);
-									debug_out(resp,												DEBUG_ERROR, 1);
-							}
-							else {
-									rec_count = sqlite3_column_int(res, 0);
-							}
-						}
-						sqlite3_finalize(res);
-						sqlite3_close(db);
-					}
+				rc = db_exec(db, "PRAGMA page_size = 512;");
+				if (rc != SQLITE_OK) {
+					debug_out(F("PRAGMA page_size set failure"),							DEBUG_ERROR, 1);
 				}
+
+				rc = db_exec(db, "PRAGMA default_cache_size = 200; PRAGMA cache_size = 200;");
+				if (rc != SQLITE_OK) {
+					debug_out(F("PRAGMA default_cache_size set failure"),					DEBUG_ERROR, 1);
+				}
+
+
+
+				rc = db_exec(db, "CREATE TABLE IF NOT EXISTS timestamps (Id integer PRIMARY KEY, datetime integer, sendGS BOOL, sendAD BOOL);");
+				if (rc != SQLITE_OK) {
+					 sqlite3_close(db);
+					 debug_out(F("Table 'timestamps' creation failure"),			DEBUG_ERROR, 1);
+					 return;
+				}
+
+				rc = db_exec(db, "CREATE TABLE IF NOT EXISTS measBME (Id integer PRIMARY KEY, temp REAL, press REAL, humid REAL);");
+				if (rc != SQLITE_OK) {
+					 sqlite3_close(db);
+					 debug_out(F("Table measurements 'measBME' creation failure"),			DEBUG_ERROR, 1);
+					 return;
+				}
+
+				rc = db_exec(db, "CREATE TABLE IF NOT EXISTS measPMS (Id integer PRIMARY KEY, PM010 REAL, PM025 REAL, PM100 REAL);");
+				if (rc != SQLITE_OK) {
+					 sqlite3_close(db);
+					 debug_out(F("Table measurements 'measPMS' creation failure"),			DEBUG_ERROR, 1);
+					 return;
+				}
+
+				rc = db_exec(db, "CREATE TABLE IF NOT EXISTS measSDS (Id integer PRIMARY KEY, PM025 REAL, PM100 REAL);");
+				if (rc != SQLITE_OK) {
+					 sqlite3_close(db);
+					 debug_out(F("Table measurements 'measSDS' creation failure"),			DEBUG_ERROR, 1);
+					 return;
+				}
+
+				rc = db_exec(db, "CREATE TABLE IF NOT EXISTS measGPS (Id integer PRIMARY KEY, lat REAL, lon REAL);");
+				if (rc != SQLITE_OK) {
+					 sqlite3_close(db);
+					 debug_out(F("Table measurements 'measGPS' creation failure"),			DEBUG_ERROR, 1);
+					 return;
+				}
+
+				const char *sql = "SELECT COUNT(*) FROM timestamps WHERE sendGS IS NULL";
+				int64_t rec_count64;
+
+				if(!GetDB_Count( sql , rec_count64)){
+					rec_count = rec_count64;
+					debug_out("Count not stored records = " + String(rec_count),		DEBUG_MED_INFO, 1);
+				}
+
+				sqlite3_close(db);
 			}
+
 		}
+
+		char MAC_chars[15]; //Create a Unique AP from MAC address
+		uint64_t chipid= ESP.getEfuseMac();			//The chip ID is essentially its MAC address(length: 6 bytes).
+		uint16_t chiph = (uint16_t)(chipid>>32);	//High 2 bytes
+		uint32_t chipl = (uint32_t)(chipid);		//Low	4 bytes
+
+		snprintf(MAC_chars,15,"%04X", chiph);
+		snprintf(MAC_chars+4,15,"%08X", chipl);
+		esp_chipid = String(MAC_chars);			//50E1F1BF713C
+
 	#endif
 
+	connectWifi();
+
+
+	return;
 
   // Now set up two tasks to run independently.
   xTaskCreatePinnedToCore(
@@ -380,8 +406,8 @@ void setup() {
     ,  1024*8  // This stack size can be checked & adjusted by reading the Stack Highwater
     ,  NULL
     ,  1  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-    ,  NULL 
-    ,  SECOND_CORE);
+    ,  NULL
+    ,  ARDUINO_RUNNING_CORE);	//SECOND_CORE);
 
   xTaskCreatePinnedToCore(
     TaskReadSensors
@@ -537,7 +563,7 @@ void TaskBlink(void *pvParameters)  // This is a task.
     	vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
     }
 
-//	#ifdef CFG_GSHEET
+	#ifdef CFG_GSHEET
 	#ifdef CFG_SQL
 
     	String  data_4_custom 	= "";
@@ -556,7 +582,7 @@ void TaskBlink(void *pvParameters)  // This is a task.
 				if(rec_count){
 
 					String DateTime 	= "";
-					String DateTimeTMP 	= "";
+					String TEMP 		= "";
 
 					String MeasSDS		= "";
 					String MeasPMS		= "";
@@ -571,139 +597,149 @@ void TaskBlink(void *pvParameters)  // This is a task.
 					RowID.replace(",", "");
 					RowID.trim();
 
-					debug_out("Data from timestamps DB: " + RowID + ":" + DateTime,			DEBUG_ALWAYS, 1);
+					debug_out("From timestamps DB: RowID=" + RowID + "; DateTime=" + DateTime,			DEBUG_ALWAYS, 1);
 
 					if(RowID){
 
-						sql = "SELECT PM100, PM025        FROM measSDS WHERE Id='" + RowID + "' LIMIT 1";
-						GetDB_Data(sql.c_str(), DateTime	, MeasSDS);
+						sql = "SELECT Id, PM100, PM025        FROM measSDS WHERE Id='" + RowID + "' LIMIT 1";
+						GetDB_Data(sql.c_str(), TEMP	, MeasSDS);
 
-						sql = "SELECT PM100, PM025, PM010 FROM measPMS WHERE Id='" + RowID + "' LIMIT 1";
-						GetDB_Data(sql.c_str(), DateTimeTMP	, MeasPMS);
+						sql = "SELECT Id, PM100, PM025, PM010 FROM measPMS WHERE Id='" + RowID + "' LIMIT 1";
+						GetDB_Data(sql.c_str(), TEMP	, MeasPMS);
 
-						sql = "SELECT temp, humid, press  FROM measBME WHERE Id='" + RowID + "' LIMIT 1";
-						GetDB_Data(sql.c_str(), DateTimeTMP	, MeasBME);
+						sql = "SELECT Id, temp, humid, press  FROM measBME WHERE Id='" + RowID + "' LIMIT 1";
+						GetDB_Data(sql.c_str(), TEMP	, MeasBME);
 
-						sql = "SELECT lat, lon            FROM measGPS WHERE Id='" + RowID + "' LIMIT 1";
-						GetDB_Data(sql.c_str(), DateTimeTMP	, MeasGPS);
+						sql = "SELECT Id, lat, lon            FROM measGPS WHERE Id='" + RowID + "' LIMIT 1";
+						GetDB_Data(sql.c_str(), TEMP	, MeasGPS);
 
-						debug_out("Data from measSDS DB:" + MeasSDS,						DEBUG_ALWAYS, 1);
-						debug_out("Data from measPMS DB:" + MeasPMS,						DEBUG_ALWAYS, 1);
-						debug_out("Data from measBME DB:" + MeasBME,						DEBUG_ALWAYS, 1);
-						debug_out("Data from measGPS DB:" + MeasGPS,						DEBUG_ALWAYS, 1);
+						debug_out("From measSDS DB:" + MeasSDS,						DEBUG_ALWAYS, 1);
+						debug_out("From measPMS DB:" + MeasPMS,						DEBUG_ALWAYS, 1);
+						debug_out("From measBME DB:" + MeasBME,						DEBUG_ALWAYS, 1);
+						debug_out("From measGPS DB:" + MeasGPS,						DEBUG_ALWAYS, 1);
+
+						vTaskDelay(500);  // one tick delay (1ms) in between reads for stability
 
 						// Send data
 						// ....
 						// ....
 
-						sql = "UPDATE timestamps SET sendGS = 1 WHERE Id='" + RowID + "';";
-						GetDB_Data(sql.c_str(), DateTimeTMP	, MeasSDS);							// Mark record as sended
+						String data = FPSTR(data_first_part);
+						data.replace("{v}", SOFTWARE_VERSION);
 
 
-						/*	String data = FPSTR(data_first_part);
-							data.replace("{v}", SOFTWARE_VERSION);
-
-							rowid = sqlite3_column_int64(res,0);
-							Serial.printf("Retrived rowid=%ld\r\n",	rowid);
-
-							// GPS data
-							data += Var2Json(F("datetime"),						sqlite3_column_int(res, 1));
-							data += Var2Json(F("GPS_lat"),						sqlite3_column_double(res, 2));
-							data += Var2Json(F("GPS_lon"),						sqlite3_column_double(res, 3));
-
-							data += Var2Json(F("BME280_pressure"),				sqlite3_column_double(res, 4));
-							data += Var2Json(F("BME280_temperature"), 			sqlite3_column_double(res, 5));
-							data += Var2Json(F("BME280_humidity"), 				sqlite3_column_double(res, 6));
-
-							data += Var2Json(F("SDS_P1"),						sqlite3_column_double(res, 7));
-							data += Var2Json(F("SDS_P2"),						sqlite3_column_double(res, 8));
-
-							data += Var2Json(F("PMS_P1"),						sqlite3_column_double(res, 9));
-							data += Var2Json(F("PMS_P2"),						sqlite3_column_double(res,10));
-
-							data += "]}";
+						DateTime 	= "32145";
+						MeasSDS		= "235.5";
+						MeasPMS		= "354.1";
+						MeasGPS		= "854.7";
+						MeasBME		= "321.8";
 
 
+						// GPS data
+						debug_out("Prepare JSON.",									DEBUG_ALWAYS, 1);
+
+						data += Var2Json(F("datetime"),						"23125");//DateTime);
+						data += Var2Json(F("GPS_lat"),						"325");//MeasGPS);
+						data += Var2Json(F("GPS_lon"),						"231");//MeasGPS);
+
+						data += Var2Json(F("BME280_pressure"),				"123");//MeasBME);
+						data += Var2Json(F("BME280_temperature"), 			"951");//MeasBME);
+						data += Var2Json(F("BME280_humidity"), 				"753");//MeasBME);
+
+						data += Var2Json(F("SDS_P1"),						"852");//MeasSDS);
+						data += Var2Json(F("SDS_P2"),						"147");//MeasSDS);
+
+						data += Var2Json(F("PMS_P1"),						"325");//MeasGPS);
+						data += Var2Json(F("PMS_P2"),						"852");//MeasGPS);
+						data += Var2Json(F("PMS_P3"),						"987");//MeasGPS);
+
+						data += "]}";
+
+						// prepare for googlesheet script
+						debug_out("Finalize data variable.",						DEBUG_ALWAYS, 1);
+
+						data.remove(0, 1);
+						data = "{\"espid\": \"" + esp_chipid + "\", \"count_sends\": \"" + "DB" + "\"," + data + "}";
+						data.replace("\"sensordatavalues\":[", "\"sensordatavalues\":{");
+						data.replace("}","");
+						data.replace("]","");
+
+//						data = data +  "\"TaskBlink\":"			+Float2String(uxHighWaterMark_TaskBlink, 		1, 6);
+//						data = data + ",\"TaskArchiveMeas\":"	+Float2String(uxHighWaterMark_TaskArchiveMeas, 	1, 6);
+//						data = data + ",\"TaskReadSensors\":"	+Float2String(uxHighWaterMark_TaskReadSensors, 	1, 6);
+//						data = data + ",\"TaskDisplay\":"		+Float2String(uxHighWaterMark_TaskDisplay, 		1, 6);
+						debug_out("Finalize data variable2.",						DEBUG_ALWAYS, 1);
+
+						data += "}}}";
+
+						debug_out("Send from buffer to spreadsheet", 				DEBUG_ALWAYS, 1);
+						payload = payload_base + data;
+						vTaskDelay(500);  // one tick delay (1ms) in between reads for stability
+
+						// Connect to WiFi
+						digitalWrite(LED_BUILTIN, HIGH);   	// turn the LED on (HIGH is the voltage level)
 
 
 
-							// prepare for googlesheet script
-							data.remove(0, 1);
-							data = "{\"espid\": \"" + String(esp_chipid) + "\", \"count_sends\": \"" + "DB" + "\"," + data + "}";
-							data.replace("\"sensordatavalues\":[", "\"sensordatavalues\":{");
-							data.replace("}","");
-							data.replace("]","");
-							data = data + "\"Heap_Siz\":"+String(ESP.getHeapSize())+",\"Heap_Free\":"+String(esp_get_free_heap_size())+",\"Heap_MinFree\":"+String(esp_get_minimum_free_heap_size())+",\"Heap_MaxAlloc\":"+String(ESP.getMaxAllocHeap());
-							data = data + "}}}";
+							// Connect to spreadsheet
+							client = new HTTPSRedirect(httpsPort);
+							client->setPrintResponseBody(false);
+							client->setContentTypeHeader("application/json");
 
-							debug_out(F("Send from buffer to spreadsheet"), DEBUG_MIN_INFO, 1);
-							payload = payload_base + data;
+							if (client != nullptr){
+								if (!client->connected()){
 
-
-
-									if (client != nullptr){
-										if (!client->connected()){
-
-											// Try to connect for a maximum of 3 times
-											for (int i=0; i<3; i++){
-												int retval = client->connect(host, httpsPort);
-												if (retval == 1) {
-													 break;
-												}
-												else {
-													debug_out(F("Connection failed. Retrying..."), DEBUG_MIN_INFO, 1);
-													Serial.println(client->getResponseBody() );
-													error_count++;
-												}
-											}
+									// Try to connect for a maximum of 3 times
+									for (int i=0; i<3; i++){
+										int retval = client->connect(host, httpsPort);
+										if (retval == 1) {
+											 break;
 										}
-									}
-									else{
-										debug_out(F("Error creating client object!"), DEBUG_MIN_INFO, 1);
-										error_count++;
-									}
-									if (!client->connected()){
-										debug_out(F("Connection failed. Stand by till next period"), DEBUG_MIN_INFO, 1);
-									}
-									else
-									{
-
-										if(client->POST(url2, host, payload)){
-											debug_out(F("Spreadsheet updated"), DEBUG_MIN_INFO, 1);
-
-											// Data sent sucesfully. Remove record from DB
-
-											String query = "DELETE FROM measurements where rowid=";
-											query += String(rowid);
-
-											rc = db_exec(db, query.c_str());
-											if (rc != SQLITE_OK) {
-												 Serial.println("Row delete command failed");
-											}
-											else
-											{
-												debug_out(F("Spreadsheet updated sucesfully. Buffer row deleted"), DEBUG_MIN_INFO, 1);
-											}
-
-										}
-										else{
+										else {
+											debug_out(F("Connection failed. Retrying..."), DEBUG_MIN_INFO, 1);
+											Serial.println(client->getResponseBody() );
 											error_count++;
-											debug_out(F("Spreadsheet update fails: "), DEBUG_MIN_INFO, 1);
 										}
 									}
+								}
+							}
+							else{
+								debug_out(F("Error creating client object!"), DEBUG_MIN_INFO, 1);
+								error_count++;
+							}
+							if (!client->connected()){
+								debug_out(F("Connection failed. Stand by till next period"), DEBUG_MIN_INFO, 1);
+							}
+							else
+							{
+
+								if(client->POST(url2, host, payload)){
+									debug_out(F("Spreadsheet updated"), DEBUG_MIN_INFO, 1);
+
+									// Data sent sucesfully. Remove record from DB
+
+//									sql = "UPDATE timestamps SET sendGS = 1 WHERE Id='" + RowID + "';";
+//									GetDB_Data(sql.c_str(), TEMP	, MeasSDS);							// Mark record as sended
+//
+//									debug_out(F("Spreadsheet updated sucesfully. Data row marked"), DEBUG_MIN_INFO, 1);
+
+								}
+								else{
+									error_count++;
+									debug_out(F("Spreadsheet update fails: "), DEBUG_MIN_INFO, 1);
+								}
+							}
 
 
-										// delete HTTPSRedirect object
-								delete client;
-								client = nullptr;
+							// delete HTTPSRedirect object
+							delete client;
+							client = nullptr;
 
-								Serial.print(F("client object deleted"));
+						Serial.print(F("client object deleted"));
 
-					 */
-
+						digitalWrite(LED_BUILTIN, LOW);    	// turn the LED off by making the voltage LOW
 
 					}
-
 				}
 			}
     	}
@@ -712,7 +748,7 @@ void TaskBlink(void *pvParameters)  // This is a task.
 		xSemaphoreGive(SQL_mutex);
 
 	#endif
-//	#endif
+	#endif
 
     uxHighWaterMark_TaskBlink = uxTaskGetStackHighWaterMark( NULL );
   }
@@ -958,7 +994,7 @@ void display_values() {
 		display_header = F("Stack free");
 
 		display_lines[0] = "Blink" + check_display_value(uxHighWaterMark_TaskBlink			, 0, 0, 6) + "  Sens" + check_display_value(uxHighWaterMark_TaskReadSensors	, 0, 0, 6);
-		display_lines[1] = "Diag " + check_display_value(uxHighWaterMark_TaskDiagLevel		, 0, 0, 6) + "  Keyb" + check_display_value(uxHighWaterMark_TaskKeyboard		, 0, 0, 6);
+		display_lines[1] = "Diag " + check_display_value(uxHighWaterMark_TaskDiagLevel		, 0, 0, 6) + "  Keyb" + check_display_value(uxHighWaterMark_TaskKeyboard	, 0, 0, 6);
 		display_lines[2] = "Arch " + check_display_value(uxHighWaterMark_TaskArchiveMeas	, 0, 0, 6) + "  Disp" + check_display_value(uxHighWaterMark_TaskDisplay		, 0, 0, 6);
 
 //		display_lines[0] = "";//"IP:      " + WiFi.localIP().toString();
@@ -971,8 +1007,8 @@ void display_values() {
 		break;
 	case (6):
 		display_header = F("Device Info");
-		display_lines[0] = "DB records: " + String(rec_count);//"ID: " + esp_chipid;
-		display_lines[1] = "";//"FW: " + String(SOFTWARE_VERSION);
+		display_lines[0] = "DB records: " 	+ String(rec_count);	//"ID: " + esp_chipid;
+		display_lines[1] = "Last RID:   " 		+ String((int)RID);		//"FW: " + String(SOFTWARE_VERSION);
 		display_lines[2] = "";//"Meas: " + String(count_sends) + " Since last: " + String((long)((msSince(starttime) + 500) / 1000)) + " s.";
 
 
@@ -1339,7 +1375,6 @@ void Store2DB(){
 		}
 		else
 		{
-			int64_t RID = 0;
 
 			query = "SELECT last_insert_rowid();";
 			if(!GetDB_Count(query.c_str(), RID)){
@@ -1426,3 +1461,53 @@ void ClearDB(){
 }
 
 #endif
+
+
+
+
+/*****************************************************************
+ * WiFi auto connecting script																	 *
+ *****************************************************************/
+
+static void waitForWifiToConnect(int maxRetries) {
+	int retryCount = 0;
+	while ((WiFi.status() != WL_CONNECTED) && (retryCount <	maxRetries)) {
+
+		WiFi.disconnect(false);
+
+		delay(1000);  									// one tick delay (1ms) in between reads for stability
+		debug_out(".", 									DEBUG_ALWAYS, 0);
+
+
+		WiFi.mode(WIFI_AP_STA);
+		WiFi.begin(cfg::wlanssid, cfg::wlanpwd); // Start WiFI
+
+		++retryCount;
+	}
+	debug_out("", 										DEBUG_ALWAYS, 1);
+
+}
+
+
+void connectWifi() {
+
+	debug_out(F("Connecting to "), 						DEBUG_ALWAYS, 0);
+	debug_out(cfg::wlanssid,							DEBUG_ALWAYS, 1);
+
+	WiFi.begin(cfg::wlanssid, cfg::wlanpwd); // Start WiFI
+
+	waitForWifiToConnect(20);
+
+	if (WiFi.status() != WL_CONNECTED) {
+		debug_out(F("WiFi not connected"), 				DEBUG_ALWAYS, 1);
+	}
+	else {
+		debug_out(F("WiFi connected\nIP address: "), 	DEBUG_ALWAYS, 0);
+		debug_out(WiFi.localIP().toString(), 			DEBUG_ALWAYS, 1);
+
+		//init and get the time
+		configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+	}
+
+}
+
