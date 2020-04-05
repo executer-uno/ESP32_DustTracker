@@ -199,12 +199,14 @@ PMmeas BMEmeasT;
 PMmeas BMEmeasH;
 
 // define tasks
-void TaskBlink( void *pvParameters );
-void TaskReadSensors( void *pvParameters );
-void TaskDiagLevel( void *pvParameters );
-void TaskKeyboard( void *pvParameters );
-void TaskArchiveMeas( void *pvParameters );
-void TaskDisplay( void *pvParameters );
+void TaskBlink(			void *pvParameters );
+void TaskReadSensors( 	void *pvParameters );
+void TaskDiagLevel( 	void *pvParameters );
+void TaskKeyboard( 		void *pvParameters );
+void TaskArchiveMeas( 	void *pvParameters );
+void TaskDisplay( 		void *pvParameters );
+void TaskWiFi( 			void *pvParameters );
+
 
 static TaskHandle_t xTaskDisplay_handle = NULL;
 static TaskHandle_t xTaskArchiveMeas_handle = NULL;
@@ -215,10 +217,13 @@ UBaseType_t uxHighWaterMark_TaskDiagLevel;
 UBaseType_t uxHighWaterMark_TaskKeyboard;
 UBaseType_t uxHighWaterMark_TaskArchiveMeas;
 UBaseType_t uxHighWaterMark_TaskDisplay;
+UBaseType_t uxHighWaterMark_TaskWiFi;
+
 
 SemaphoreHandle_t I2C_mutex;	// Mutex to access to I2C interface
 SemaphoreHandle_t Serial_mutex;	// Mutex to access to Serial RS232 interface
 SemaphoreHandle_t SQL_mutex;	// Mutex to access to SQLite database
+SemaphoreHandle_t WiFi_mutex;	// Mutex to access to SQLite database
 
 
 
@@ -227,6 +232,8 @@ void setup() {
 	I2C_mutex 		= xSemaphoreCreateMutex();
 	Serial_mutex 	= xSemaphoreCreateMutex();
 	SQL_mutex		= xSemaphoreCreateMutex();
+	WiFi_mutex		= xSemaphoreCreateMutex();
+
 
 	// Configure buttons
 	pinMode(BUT_1, INPUT_PULLUP);
@@ -409,62 +416,72 @@ void setup() {
 	connectWifi();
 
 
-	return;
+//  // Now set up two tasks to run independently.
+	xTaskCreatePinnedToCore(
+		TaskBlink
+		,  "TaskBlink"   // A name just for humans
+		,  1024*8  // This stack size can be checked & adjusted by reading the Stack Highwater
+		,  NULL
+		,  1  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
+		,  NULL
+		,  SECOND_CORE);	//SECOND_CORE);
+
 
   // Now set up two tasks to run independently.
-  xTaskCreatePinnedToCore(
-    TaskBlink
-    ,  "TaskBlink"   // A name just for humans
-    ,  1024*8  // This stack size can be checked & adjusted by reading the Stack Highwater
-    ,  NULL
-    ,  1  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-    ,  NULL
-    ,  ARDUINO_RUNNING_CORE);	//SECOND_CORE);
+	xTaskCreatePinnedToCore(
+		TaskWiFi
+		,  "WiFi_reconnect"   // A name just for humans
+		,  1024*2  	// This stack size can be checked & adjusted by reading the Stack Highwater
+		,  NULL
+		,  1  		// Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
+		,  NULL
+		,  SECOND_CORE);	//SECOND_CORE);
 
-  xTaskCreatePinnedToCore(
-    TaskReadSensors
-    ,  "ReadSDSPMS"
-    ,  1024*3 // Stack size
-    ,  NULL
-    ,  2  // Priority
-    ,  NULL
-    ,  ARDUINO_RUNNING_CORE);
 
-  xTaskCreatePinnedToCore(
-	TaskDiagLevel
-    ,  "DiagLevel"
-    ,  1024  // Stack size
-    ,  NULL
-    ,  2  // Priority
-    ,  NULL
-    ,  ARDUINO_RUNNING_CORE);
+	xTaskCreatePinnedToCore(
+		TaskReadSensors
+		,  "ReadSDSPMS"
+		,  1024*3 	// Stack size
+		,  NULL
+		,  2  		// Priority
+		,  NULL
+		,  ARDUINO_RUNNING_CORE);
 
-  xTaskCreatePinnedToCore(
-	TaskKeyboard
-    ,  "Keyboard"
-    ,  1024  // Stack size
-    ,  NULL
-    ,  1  // Priority
-    ,  NULL
-    ,  ARDUINO_RUNNING_CORE);
+	xTaskCreatePinnedToCore(
+		TaskDiagLevel
+		,  "DiagLevel"
+		,  1024  // Stack size
+		,  NULL
+		,  2  // Priority
+		,  NULL
+		,  ARDUINO_RUNNING_CORE);
 
-  xTaskCreatePinnedToCore(
-	TaskArchiveMeas
-    ,  "CyclicArcive"
-    ,  1024*5 // Stack size
-    ,  NULL
-    ,  1  // Priority
-    ,  &xTaskArchiveMeas_handle
-    ,  ARDUINO_RUNNING_CORE);
+	xTaskCreatePinnedToCore(
+		TaskKeyboard
+		,  "Keyboard"
+		,  1024  // Stack size
+		,  NULL
+		,  1  // Priority
+		,  NULL
+		,  ARDUINO_RUNNING_CORE);
 
-  xTaskCreatePinnedToCore(
-	TaskDisplay
-    ,  "Display"
-    ,  2048  // Stack size
-    ,  NULL
-    ,  2  // Priority
-    ,  &xTaskDisplay_handle
-    ,  ARDUINO_RUNNING_CORE);
+	xTaskCreatePinnedToCore(
+		TaskArchiveMeas
+		,  "CyclicArcive"
+		,  1024*5 // Stack size
+		,  NULL
+		,  1  // Priority
+		,  &xTaskArchiveMeas_handle
+		,  ARDUINO_RUNNING_CORE);
+
+	xTaskCreatePinnedToCore(
+		TaskDisplay
+		,  "Display"
+		,  1024*4  // Stack size
+		,  NULL
+		,  2  // Priority
+		,  &xTaskDisplay_handle
+		,  ARDUINO_RUNNING_CORE);
 
   // Now the task scheduler, which takes over control of scheduling individual tasks, is automatically started.
 }
@@ -586,6 +603,8 @@ void TaskBlink(void *pvParameters)  // This is a task.
     	xSemaphoreTake(SQL_mutex, portMAX_DELAY);
     	if (!db_open(DB_PATH, &db))
     	{
+
+/*
     		// Check if anything in database to be sent?
     		sql = "SELECT COUNT(*) FROM timestamps WHERE sendGS IS NULL";
 
@@ -748,13 +767,15 @@ void TaskBlink(void *pvParameters)  // This is a task.
 							delete client;
 							client = nullptr;
 
+
+
 						Serial.print(F("client object deleted"));
 
 						digitalWrite(LED_BUILTIN, LOW);    	// turn the LED off by making the voltage LOW
 
 					}
 				}
-			}
+			}*/
     	}
 
 		sqlite3_close(db);
@@ -860,12 +881,55 @@ void TaskDisplay(void *pvParameters)  // This is a task.
 			debug_out(F("DISPLAY: refresh by timeout"), 		DEBUG_MAX_INFO, 1);
 		}
 
-
+		vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
 
 		uxHighWaterMark_TaskDisplay = uxTaskGetStackHighWaterMark( NULL );
 	}
 	vTaskDelete( NULL );
 }
+
+
+
+
+
+void TaskWiFi(void *pvParameters)  // This is a task.
+{
+	(void) pvParameters;
+
+	for (;;) // A Task shall never return or exit.
+	{
+
+    	xSemaphoreTake(SQL_mutex, portMAX_DELAY);
+
+	    if (!WiFi.isConnected()) {
+
+			// Attempt to reconnect
+			waitForWifiToConnect(6);
+			if (WiFi.status() != WL_CONNECTED) {
+				debug_out(F("WiFi in cycle unable to reconnect"), 		DEBUG_ERROR, 1);
+			}
+	    }
+		else {
+			debug_out(F("WiFi connected at IP address: "), 	DEBUG_ALWAYS, 0);
+			debug_out(WiFi.localIP().toString(), 			DEBUG_ALWAYS, 1);
+
+			//init and get the time
+			configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+
+			xSemaphoreGive(SQL_mutex);
+			printLocalTime();
+		}
+
+
+
+	    // Wait for the next cycle.
+		vTaskDelay(5000);  // one tick delay (1ms) in between reads for stability
+
+		uxHighWaterMark_TaskWiFi = uxTaskGetStackHighWaterMark( NULL );
+	}
+	vTaskDelete( NULL );
+}
+
 
 
 void TaskKeyboard(void *pvParameters)  // This is a task.
@@ -960,7 +1024,7 @@ static String displayGenerateFooter(unsigned int screen_count) {
 void display_values() {
 
 	String display_header = "";
-	String display_lines[3] = { "", "", ""};
+	String display_lines[4] = { "", "", "", ""};
 
 	int screens[9];
 	int screen_count = 0;
@@ -1020,6 +1084,7 @@ void display_values() {
 		display_lines[0] = "Blink" + check_display_value(uxHighWaterMark_TaskBlink			, 0, 0, 6) + "  Sens" + check_display_value(uxHighWaterMark_TaskReadSensors	, 0, 0, 6);
 		display_lines[1] = "Diag " + check_display_value(uxHighWaterMark_TaskDiagLevel		, 0, 0, 6) + "  Keyb" + check_display_value(uxHighWaterMark_TaskKeyboard	, 0, 0, 6);
 		display_lines[2] = "Arch " + check_display_value(uxHighWaterMark_TaskArchiveMeas	, 0, 0, 6) + "  Disp" + check_display_value(uxHighWaterMark_TaskDisplay		, 0, 0, 6);
+		display_lines[3] = "WiFi " + check_display_value(uxHighWaterMark_TaskWiFi			, 0, 0, 6);
 
 //		display_lines[0] = "";//"IP:      " + WiFi.localIP().toString();
 //		display_lines[1] = "";//"SSID:    " + WiFi.SSID();
@@ -1031,9 +1096,9 @@ void display_values() {
 		break;
 	case (6):
 		display_header = F("Device Info");
-		display_lines[0] = "DB records: " 	+ String(rec_count);	//"ID: " + esp_chipid;
-		display_lines[1] = "Last RID:   " 		+ String((int)RID);		//"FW: " + String(SOFTWARE_VERSION);
-		display_lines[2] = "";//"Meas: " + String(count_sends) + " Since last: " + String((long)((msSince(starttime) + 500) / 1000)) + " s.";
+		display_lines[0] = "Recs: "  + String(rec_count) + " RID: " 		+ String((int)RID);
+		display_lines[1] = "SSID: "  + WiFi.SSID() + " (" + WiFi.localIP().toString() + ")";
+		display_lines[2] = "SNR:  "  + String(calcWiFiSignalQuality(WiFi.RSSI())) + "%";
 
 
 
@@ -1062,8 +1127,13 @@ void display_values() {
 		display.drawString(0, 25, display_lines[1]);
 		display.drawString(0, 37, display_lines[2]);
 
-		display.setTextAlignment(TEXT_ALIGN_CENTER);
-		display.drawString(64, 52, displayGenerateFooter(screen_count));
+		if(screens[next_display_count % screen_count] == 5){
+			display.drawString(0, 52, display_lines[3]);
+		}
+		else{
+			display.setTextAlignment(TEXT_ALIGN_CENTER);
+			display.drawString(64, 52, displayGenerateFooter(screen_count));
+		}
 
 //		// Show time on display
 //		struct tm timeinfo;
@@ -1498,19 +1568,27 @@ void ClearDB(){
  *****************************************************************/
 
 static void waitForWifiToConnect(int maxRetries) {
-	int retryCount = 0;
-	while ((WiFi.status() != WL_CONNECTED) && (retryCount <	maxRetries)) {
+	if (!WiFi.isConnected())
+	{
+		int retryCount = 0;
 
-
-		delay(1000);  									// one tick delay (1ms) in between reads for stability
-		debug_out(".", 									DEBUG_ALWAYS, 0);
-
+		WiFi.disconnect(false);
+		WiFi.mode(WIFI_STA);
 		WiFi.begin(); // Start WiFI
+		vTaskDelay(500);
 
-		++retryCount;
+		while ((WiFi.status() != WL_CONNECTED) && (retryCount <	maxRetries)) {
+
+
+			vTaskDelay(1000);  // one tick delay (1ms) in between reads for stability
+			debug_out(".", 									DEBUG_ALWAYS, 0);
+
+			WiFi.begin(); // Start WiFI
+
+			++retryCount;
+		}
+		debug_out("", 										DEBUG_ALWAYS, 1);
 	}
-	debug_out("", 										DEBUG_ALWAYS, 1);
-
 }
 
 
@@ -1522,20 +1600,15 @@ void connectWifi() {
 	WiFi.begin(cfg::wlanssid, cfg::wlanpwd); // Start WiFI
 	WiFi.mode(WIFI_STA);
 
-	waitForWifiToConnect(20);
-
-	if (WiFi.status() != WL_CONNECTED) {
-		debug_out(F("WiFi not connected"), 				DEBUG_ALWAYS, 1);
-	}
-	else {
-		debug_out(F("WiFi connected\nIP address: "), 	DEBUG_ALWAYS, 0);
-		debug_out(WiFi.localIP().toString(), 			DEBUG_ALWAYS, 1);
-
-		//init and get the time
-		configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-		printLocalTime();
-	}
 }
 
 
-
+static int32_t calcWiFiSignalQuality(int32_t rssi) {
+	if (rssi > -50) {
+		rssi = -50;
+	}
+	if (rssi < -100) {
+		rssi = -100;
+	}
+	return (rssi + 100) * 2;
+}
