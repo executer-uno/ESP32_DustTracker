@@ -9,12 +9,14 @@
 	// Config functionality
 	#define CFG_BME280
 	#define CFG_LCD
-	#define CFG_GPS
+	//#define CFG_GPS
 	#define CFG_SQL
 	#define CFG_GSHEET
 
 #include <Arduino.h>
-#include "BluetoothSerial.h" //Header File for Serial Bluetooth, will be added by default into Arduino
+#ifdef CFG_GPS
+	#include "BluetoothSerial.h" //Header File for Serial Bluetooth, will be added by default into Arduino
+#endif
 #include "html-content.h"
 
 
@@ -106,11 +108,15 @@
 
 // ***************************** Variables *********************************
 
-BluetoothSerial Serial; 		//Object for Bluetooth
-HardwareSerial 	serialSDS(0);
-HardwareSerial 	serialPMS(1);
-HardwareSerial 	serialGPS(2);
+HardwareSerial 	serialSDS(1);
+HardwareSerial 	serialPMS(2);
 
+#ifdef CFG_GPS
+	BluetoothSerial Serial; 		//Object for Bluetooth
+	HardwareSerial 	serialGPS(2);
+#else
+	HardwareSerial 	Serial(0);		// HW serial debug
+#endif
 
 
 
@@ -230,7 +236,15 @@ void setup() {
  	// initialize digital LED_BUILTIN as an output.
 	pinMode(LED_BUILTIN, OUTPUT);
 
-	Serial.begin("ESP32_PMS_Station"); //Name of your Bluetooth Signal
+	serialSDS.begin(9600, SERIAL_8N1, PM_SERIAL_RX,  PM_SERIAL_TX);			 		// for HW UART SDS
+	serialPMS.begin(9600, SERIAL_8N1, PM2_SERIAL_RX, PM2_SERIAL_TX);			 	// for HW UART PMS
+
+	#ifdef CFG_GPS
+		serialGPS.begin(9600, SERIAL_8N1, GPS_SERIAL_RX, GPS_SERIAL_TX);			// for HW UART GPS
+		Serial.begin("ESP32_PMS_Station"); //Name of your Bluetooth Station
+	#else
+		Serial.begin(115200, SERIAL_8N1, DEB_RX, DEB_TX);			 				// for HW UART GPS
+	#endif
 
 	#ifdef CFG_LCD
 		/*****************************************************************
@@ -264,9 +278,7 @@ void setup() {
 		display.display();
 	}
 
-	serialSDS.begin(9600, SERIAL_8N1, PM_SERIAL_RX,  PM_SERIAL_TX);			 		// for HW UART SDS
-	serialPMS.begin(9600, SERIAL_8N1, PM2_SERIAL_RX, PM2_SERIAL_TX);			 	// for HW UART PMS
-	serialGPS.begin(9600, SERIAL_8N1, GPS_SERIAL_RX, GPS_SERIAL_TX);			 	// for HW UART GPS
+
 
 	#ifdef CFG_BME280
 		if (cfg::bme280_read) {
@@ -460,6 +472,7 @@ void setup() {
 void loop()
 {
 	// No job
+	vTaskDelete( NULL );
 }
 
 
@@ -915,8 +928,11 @@ void TaskReadSensors(void *pvParameters)  // This is a task.
     vTaskDelay(150);  // one tick delay (1ms) in between reads for stability
     sensorBME280();
     vTaskDelay(150);  // one tick delay (1ms) in between reads for stability
+
+#ifdef CFG_GPS
     sensorGPS();
     vTaskDelay(150);  // one tick delay (1ms) in between reads for stability
+#endif
 
     uxHighWaterMark_TaskReadSensors = uxTaskGetStackHighWaterMark( NULL );
   }
@@ -986,9 +1002,17 @@ void display_values() {
 		break;
 	case (4):
 		display_header = F("GPS NEO6M");
+#ifdef CFG_GPS
 		display_lines[0] = "Lat: " + check_display_value(last_value_GPS_lat , -200.0, 6, 10);
 		display_lines[1] = "Lon: " + check_display_value(last_value_GPS_lon , -200.0, 6, 10);
 		display_lines[2] = "Alt: " + check_display_value(last_value_GPS_alt , -200.0, 2, 10);
+#else
+		display_lines[0] = "Lat: ";
+		display_lines[1] = "Lon: ";
+		display_lines[2] = "Alt: ";
+#endif
+
+
 		break;
 	case (5):
 		display_header = F("Stack free");
@@ -1408,6 +1432,7 @@ void Store2DB(){
 					debug_out(F("Table 'measPMS' not updated"),			DEBUG_ERROR, 1);
 				}
 
+#ifdef CFG_GPS
 				query  = "INSERT INTO measGPS (Id, lat, lon) VALUES ('" + String((int)RID) + "',";
 				query += Float2String(last_value_GPS_lat) + ",";
 				query += Float2String(last_value_GPS_lon) + ")";
@@ -1416,6 +1441,9 @@ void Store2DB(){
 				if (rc != SQLITE_OK) {
 					debug_out(F("Table 'measGPS' not updated"),			DEBUG_ERROR, 1);
 				}
+#endif
+
+
 			}
 		}
 		sqlite3_close(db);
@@ -1473,14 +1501,11 @@ static void waitForWifiToConnect(int maxRetries) {
 	int retryCount = 0;
 	while ((WiFi.status() != WL_CONNECTED) && (retryCount <	maxRetries)) {
 
-		WiFi.disconnect(false);
 
 		delay(1000);  									// one tick delay (1ms) in between reads for stability
 		debug_out(".", 									DEBUG_ALWAYS, 0);
 
-
-		WiFi.mode(WIFI_AP_STA);
-		WiFi.begin(cfg::wlanssid, cfg::wlanpwd); // Start WiFI
+		WiFi.begin(); // Start WiFI
 
 		++retryCount;
 	}
@@ -1495,6 +1520,7 @@ void connectWifi() {
 	debug_out(cfg::wlanssid,							DEBUG_ALWAYS, 1);
 
 	WiFi.begin(cfg::wlanssid, cfg::wlanpwd); // Start WiFI
+	WiFi.mode(WIFI_STA);
 
 	waitForWifiToConnect(20);
 
@@ -1507,7 +1533,9 @@ void connectWifi() {
 
 		//init and get the time
 		configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+		printLocalTime();
 	}
-
 }
+
+
 
