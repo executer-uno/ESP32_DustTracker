@@ -192,8 +192,10 @@ void sensorSDS() {
 					SDSmeasPM025.NewMeas(((float)pm025_serial)/10.0);
 					SDSmeasPM100.NewMeas(((float)pm100_serial)/10.0);
 
+					/*
 					debug_out(F("SDS:"), 												DEBUG_MIN_INFO, 0);
 					debug_out(SDSmeasPM100.DebugAvg() + "," + SDSmeasPM025.DebugAvg(),	DEBUG_MIN_INFO, 1);
+					 */
 
 					debug_out(F("SDS PM 2.5:"), 			DEBUG_MED_INFO, 0);
 					debug_out(SDSmeasPM025.DebugRange(),	DEBUG_MED_INFO, 1);
@@ -363,8 +365,10 @@ void sensorPMS() {
 						PMSmeasPM025.NewMeas((float)pm025_serial);
 						PMSmeasPM100.NewMeas((float)pm100_serial);
 
+						/*
 						debug_out(F("PMS:"), 																				DEBUG_MIN_INFO, 0);
 						debug_out(PMSmeasPM100.DebugAvg() + "," + PMSmeasPM025.DebugAvg() + "," + PMSmeasPM010.DebugAvg(),	DEBUG_MIN_INFO, 1);
+						*/
 
 						debug_out(F("PMS PM 1.0:"), 			DEBUG_MED_INFO, 0);
 						debug_out(PMSmeasPM010.DebugRange(),	DEBUG_MED_INFO, 1);

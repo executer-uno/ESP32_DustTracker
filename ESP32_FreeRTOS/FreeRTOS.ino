@@ -206,7 +206,7 @@ void TaskKeyboard( 		void *pvParameters );
 void TaskArchiveMeas( 	void *pvParameters );
 void TaskDisplay( 		void *pvParameters );
 void TaskWiFi( 			void *pvParameters );
-
+void TaskPush2WWW( 		void *pvParameters );
 
 static TaskHandle_t xTaskDisplay_handle = NULL;
 static TaskHandle_t xTaskArchiveMeas_handle = NULL;
@@ -218,14 +218,12 @@ UBaseType_t uxHighWaterMark_TaskKeyboard;
 UBaseType_t uxHighWaterMark_TaskArchiveMeas;
 UBaseType_t uxHighWaterMark_TaskDisplay;
 UBaseType_t uxHighWaterMark_TaskWiFi;
-
+UBaseType_t uxHighWaterMark_TaskPush2WWW;
 
 SemaphoreHandle_t I2C_mutex;	// Mutex to access to I2C interface
 SemaphoreHandle_t Serial_mutex;	// Mutex to access to Serial RS232 interface
 SemaphoreHandle_t SQL_mutex;	// Mutex to access to SQLite database
 SemaphoreHandle_t WiFi_mutex;	// Mutex to access to SQLite database
-
-
 
 // the setup function runs once when you press reset or power the board
 void setup() {
@@ -263,14 +261,18 @@ void setup() {
 
 		// Boot screen
 		display.displayOn();
-		display.setTextAlignment(TEXT_ALIGN_CENTER);
+		#ifdef CFG_GPS
 
-		display.drawString(64, 0, "Bluetooth terminal ready");
-		display.setTextAlignment(TEXT_ALIGN_LEFT);
-		display.drawString(0, 13, "BT Device name:");
-		display.drawString(0, 25, "ESP32_PMS_Station");
+			display.setTextAlignment(TEXT_ALIGN_CENTER);
+
+			display.drawString(64, 0, "Bluetooth terminal ready");
+			display.setTextAlignment(TEXT_ALIGN_LEFT);
+			display.drawString(0, 13, "BT Device name:");
+			display.drawString(0, 25, "ESP32_PMS_Station");
+		#endif
 	#endif
 
+	#ifdef CFG_GPS
 	// time to connect to bluetooth
 	String progress = "";
 	for(int del=0; del<42; del++){
@@ -284,7 +286,7 @@ void setup() {
 		display.drawString(0, 37, progress);
 		display.display();
 	}
-
+	#endif
 
 
 	#ifdef CFG_BME280
@@ -415,17 +417,24 @@ void setup() {
 
 	connectWifi();
 
-
 //  // Now set up two tasks to run independently.
 	xTaskCreatePinnedToCore(
 		TaskBlink
-		,  "TaskBlink"   // A name just for humans
-		,  1024*8  // This stack size can be checked & adjusted by reading the Stack Highwater
+		,  "Blink"   // A name just for humans
+		,  1024  // This stack size can be checked & adjusted by reading the Stack Highwater
 		,  NULL
 		,  1  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
 		,  NULL
 		,  SECOND_CORE);	//SECOND_CORE);
 
+	xTaskCreatePinnedToCore(
+		TaskPush2WWW
+		,  "Internet"   // A name just for humans
+		,  1024*8  // This stack size can be checked & adjusted by reading the Stack Highwater
+		,  NULL
+		,  1  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
+		,  NULL
+		,  SECOND_CORE);	//SECOND_CORE);
 
   // Now set up two tasks to run independently.
 	xTaskCreatePinnedToCore(
@@ -577,36 +586,62 @@ void TaskBlink(void *pvParameters)  // This is a task.
 */
 
   for (;;){ // A Task shall never return or exit.
-	  // Mark task begin by LED
-    digitalWrite(LED_BUILTIN, HIGH);   	// turn the LED on (HIGH is the voltage level)
-    vTaskDelay(  5);  					// one tick delay (1ms) in between reads for stability
+
+	uxHighWaterMark_TaskBlink = uxTaskGetStackHighWaterMark( NULL );
+
+	// Mark task begin by LED
+
+	digitalWrite(LED_BUILTIN, HIGH);   	// turn the LED on (HIGH is the voltage level)
+    vTaskDelay(  3);  					// one tick delay (1ms) in between reads for stability
     digitalWrite(LED_BUILTIN, LOW);    	// turn the LED off by making the voltage LOW
     vTaskDelay(100);  					// one tick delay (1ms) in between reads for stability
-    digitalWrite(LED_BUILTIN, HIGH);   	// turn the LED on (HIGH is the voltage level)
-    vTaskDelay(  5);  					// one tick delay (1ms) in between reads for stability
-    digitalWrite(LED_BUILTIN, LOW);    	// turn the LED off by making the voltage LOW
+
+	if (WiFi.isConnected()) {
+		digitalWrite(LED_BUILTIN, HIGH);   	// turn the LED on (HIGH is the voltage level)
+		vTaskDelay(  3);  					// one tick delay (1ms) in between reads for stability
+		digitalWrite(LED_BUILTIN, LOW);    	// turn the LED off by making the voltage LOW
+	}
+    vTaskDelay(100);  					// one tick delay (1ms) in between reads for stability
+
+
 
     if(SDSmeasPM025.status == SensorSt::ok && PMSmeasPM025.status == SensorSt::ok){
-    	vTaskDelay(5000);  // one tick delay (1ms) in between reads for stability
+    	vTaskDelay(2000);  // one tick delay (1ms) in between reads for stability
     }
     else{
-    	vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
+    	vTaskDelay(500);  // one tick delay (1ms) in between reads for stability
     }
+
+  }
+  vTaskDelete( NULL );
+}
+
+
+
+
+
+void TaskPush2WWW(void *pvParameters)  // This is a task.
+{
+	(void) pvParameters;
+
+	for (;;){ // A Task shall never return or exit.
+
+		uxHighWaterMark_TaskPush2WWW = uxTaskGetStackHighWaterMark( NULL );
 
 	#ifdef CFG_GSHEET
 	#ifdef CFG_SQL
 
-    	String  data_4_custom 	= "";
+		String  data_4_custom 	= "";
 		String  sql				= "";
 		int64_t	rec_count64		= 0;
 
-    	xSemaphoreTake(SQL_mutex, portMAX_DELAY);
-    	if (!db_open(DB_PATH, &db))
-    	{
+		xSemaphoreTake(SQL_mutex, portMAX_DELAY);
+	/*    	if (!db_open(DB_PATH, &db))
+		{
 
-/*
-    		// Check if anything in database to be sent?
-    		sql = "SELECT COUNT(*) FROM timestamps WHERE sendGS IS NULL";
+
+			// Check if anything in database to be sent?
+			sql = "SELECT COUNT(*) FROM timestamps WHERE sendGS IS NULL";
 
 			if(!GetDB_Count(sql.c_str(), rec_count64)){
 				rec_count = rec_count64;
@@ -696,10 +731,10 @@ void TaskBlink(void *pvParameters)  // This is a task.
 						data.replace("}","");
 						data.replace("]","");
 
-//						data = data +  "\"TaskBlink\":"			+Float2String(uxHighWaterMark_TaskBlink, 		1, 6);
-//						data = data + ",\"TaskArchiveMeas\":"	+Float2String(uxHighWaterMark_TaskArchiveMeas, 	1, 6);
-//						data = data + ",\"TaskReadSensors\":"	+Float2String(uxHighWaterMark_TaskReadSensors, 	1, 6);
-//						data = data + ",\"TaskDisplay\":"		+Float2String(uxHighWaterMark_TaskDisplay, 		1, 6);
+	//						data = data +  "\"TaskBlink\":"			+Float2String(uxHighWaterMark_TaskBlink, 		1, 6);
+	//						data = data + ",\"TaskArchiveMeas\":"	+Float2String(uxHighWaterMark_TaskArchiveMeas, 	1, 6);
+	//						data = data + ",\"TaskReadSensors\":"	+Float2String(uxHighWaterMark_TaskReadSensors, 	1, 6);
+	//						data = data + ",\"TaskDisplay\":"		+Float2String(uxHighWaterMark_TaskDisplay, 		1, 6);
 						debug_out("Finalize data variable2.",						DEBUG_ALWAYS, 1);
 
 						data += "}}}";
@@ -750,10 +785,10 @@ void TaskBlink(void *pvParameters)  // This is a task.
 
 									// Data sent sucesfully. Remove record from DB
 
-//									sql = "UPDATE timestamps SET sendGS = 1 WHERE Id='" + RowID + "';";
-//									GetDB_Data(sql.c_str(), TEMP	, MeasSDS);							// Mark record as sended
-//
-//									debug_out(F("Spreadsheet updated sucesfully. Data row marked"), DEBUG_MIN_INFO, 1);
+	//									sql = "UPDATE timestamps SET sendGS = 1 WHERE Id='" + RowID + "';";
+	//									GetDB_Data(sql.c_str(), TEMP	, MeasSDS);							// Mark record as sended
+	//
+	//									debug_out(F("Spreadsheet updated sucesfully. Data row marked"), DEBUG_MIN_INFO, 1);
 
 								}
 								else{
@@ -775,19 +810,25 @@ void TaskBlink(void *pvParameters)  // This is a task.
 
 					}
 				}
-			}*/
-    	}
+			}
+		}
 
 		sqlite3_close(db);
+	*/
 		xSemaphoreGive(SQL_mutex);
 
 	#endif
 	#endif
 
-    uxHighWaterMark_TaskBlink = uxTaskGetStackHighWaterMark( NULL );
-  }
-  vTaskDelete( NULL );
+
+		vTaskDelay(10000);  // one tick delay (1ms) in between reads for stability
+	}
+	vTaskDelete( NULL );
 }
+
+
+
+
 
 void TaskDiagLevel(void *pvParameters)  // This is a task.
 {
@@ -830,7 +871,7 @@ void TaskArchiveMeas(void *pvParameters)  // This is a task.
 
 	  if(SDSmeasPM025.status == SensorSt::ok && PMSmeasPM025.status == SensorSt::ok){
 
-		  debug_out(F("ARCH"), DEBUG_MED_INFO, 1);
+		  debug_out(F("ARCH"), DEBUG_MIN_INFO, 1);
 
 		  SDSmeasPM025.ArchPush();
 		  SDSmeasPM100.ArchPush();
@@ -905,7 +946,10 @@ void TaskWiFi(void *pvParameters)  // This is a task.
 
 			// Attempt to reconnect
 			waitForWifiToConnect(6);
-			if (WiFi.status() != WL_CONNECTED) {
+
+			if (!WiFi.isConnected()) {
+
+
 				debug_out(F("WiFi in cycle unable to reconnect"), 		DEBUG_ERROR, 1);
 			}
 	    }
@@ -916,10 +960,11 @@ void TaskWiFi(void *pvParameters)  // This is a task.
 			//init and get the time
 			configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
 
-			xSemaphoreGive(SQL_mutex);
+
 			printLocalTime();
 		}
 
+		xSemaphoreGive(SQL_mutex);
 
 
 	    // Wait for the next cycle.
@@ -1084,7 +1129,7 @@ void display_values() {
 		display_lines[0] = "Blink" + check_display_value(uxHighWaterMark_TaskBlink			, 0, 0, 6) + "  Sens" + check_display_value(uxHighWaterMark_TaskReadSensors	, 0, 0, 6);
 		display_lines[1] = "Diag " + check_display_value(uxHighWaterMark_TaskDiagLevel		, 0, 0, 6) + "  Keyb" + check_display_value(uxHighWaterMark_TaskKeyboard	, 0, 0, 6);
 		display_lines[2] = "Arch " + check_display_value(uxHighWaterMark_TaskArchiveMeas	, 0, 0, 6) + "  Disp" + check_display_value(uxHighWaterMark_TaskDisplay		, 0, 0, 6);
-		display_lines[3] = "WiFi " + check_display_value(uxHighWaterMark_TaskWiFi			, 0, 0, 6);
+		display_lines[3] = "WiFi " + check_display_value(uxHighWaterMark_TaskWiFi			, 0, 0, 6) + "  www " + check_display_value(uxHighWaterMark_TaskPush2WWW	, 0, 0, 6);
 
 //		display_lines[0] = "";//"IP:      " + WiFi.localIP().toString();
 //		display_lines[1] = "";//"SSID:    " + WiFi.SSID();
@@ -1096,9 +1141,9 @@ void display_values() {
 		break;
 	case (6):
 		display_header = F("Device Info");
-		display_lines[0] = "Recs: "  + String(rec_count) + " RID: " 		+ String((int)RID);
-		display_lines[1] = "SSID: "  + WiFi.SSID() + " (" + WiFi.localIP().toString() + ")";
-		display_lines[2] = "SNR:  "  + String(calcWiFiSignalQuality(WiFi.RSSI())) + "%";
+		display_lines[0] = "Recs:  "  + String(rec_count) + " RID: " 		+ String((int)RID);
+		display_lines[1] = "SSID:  "  + WiFi.SSID() + " (" + String(calcWiFiSignalQuality(WiFi.RSSI())) + "%)";
+		display_lines[2] = "IP:    "  + WiFi.localIP().toString();
 
 
 
@@ -1197,12 +1242,12 @@ void sensorBME280() {
 
 		debug_out(String(FPSTR(SENSORS_BME280)) + FPSTR(DBG_TXT_COULDNT_BE_READ), DEBUG_ERROR, 1);
 	} else {
-		debug_out(FPSTR(DBG_TXT_TEMPERATURE)	, DEBUG_MIN_INFO, 0);
-		debug_out(Float2String(t) + " C"		, DEBUG_MIN_INFO, 1);
-		debug_out(FPSTR(DBG_TXT_HUMIDITY)		, DEBUG_MIN_INFO, 0);
-		debug_out(Float2String(h) + " %"		, DEBUG_MIN_INFO, 1);
-		debug_out(FPSTR(DBG_TXT_PRESSURE)		, DEBUG_MIN_INFO, 0);
-		debug_out(Float2String(p / 100) + " hPa", DEBUG_MIN_INFO, 1);
+		debug_out(FPSTR(DBG_TXT_TEMPERATURE)	, DEBUG_MED_INFO, 0);
+		debug_out(Float2String(t) + " C"		, DEBUG_MED_INFO, 1);
+		debug_out(FPSTR(DBG_TXT_HUMIDITY)		, DEBUG_MED_INFO, 0);
+		debug_out(Float2String(h) + " %"		, DEBUG_MED_INFO, 1);
+		debug_out(FPSTR(DBG_TXT_PRESSURE)		, DEBUG_MED_INFO, 0);
+		debug_out(Float2String(p / 100) + " hPa", DEBUG_MED_INFO, 1);
 
 		BMEmeasH.NewMeas(h);
 		BMEmeasT.NewMeas(t);
@@ -1594,8 +1639,8 @@ static void waitForWifiToConnect(int maxRetries) {
 
 void connectWifi() {
 
-	debug_out(F("Connecting to "), 						DEBUG_ALWAYS, 0);
-	debug_out(cfg::wlanssid,							DEBUG_ALWAYS, 1);
+	debug_out(F("Connecting to "), 							DEBUG_ALWAYS, 0);
+	debug_out(cfg::wlanssid,								DEBUG_ALWAYS, 1);
 
 	WiFi.begin(cfg::wlanssid, cfg::wlanpwd); // Start WiFI
 	WiFi.mode(WIFI_STA);

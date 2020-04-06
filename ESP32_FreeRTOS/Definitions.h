@@ -23,7 +23,7 @@
 	#define DEBUG_MED_INFO 	4
 	#define DEBUG_MAX_INFO 	5
 	// Wieviele Informationen sollenber die serielle Schnittstelle ausgegeben werden?
-	#define DEBUG DEBUG_MED_INFO
+	#define DEBUG DEBUG_MIN_INFO
 
 	// BasicAuth config
 	#define WWW_USERNAME "admin"
