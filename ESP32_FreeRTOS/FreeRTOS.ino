@@ -179,6 +179,8 @@ namespace cfg {
 	bool gps_read 		= GPS_READ;
 }
 
+time_t now;	// Time variable
+
 int	 debugPrev			= 0;
 long next_display_count = 0;
 
@@ -250,6 +252,9 @@ void setup() {
 	#else
 		Serial.begin(115200, SERIAL_8N1, DEB_RX, DEB_TX);			 				// for HW UART GPS
 	#endif
+
+	time(&now);
+	debug_out("Undefined raw time:" + String(now), DEBUG_ALWAYS, 1);
 
 	#ifdef CFG_LCD
 		/*****************************************************************
@@ -432,7 +437,7 @@ void setup() {
 		,  "Internet"   // A name just for humans
 		,  1024*8  // This stack size can be checked & adjusted by reading the Stack Highwater
 		,  NULL
-		,  1  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
+		,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
 		,  NULL
 		,  SECOND_CORE);	//SECOND_CORE);
 
@@ -618,8 +623,6 @@ void TaskBlink(void *pvParameters)  // This is a task.
 
 
 
-
-
 void TaskPush2WWW(void *pvParameters)  // This is a task.
 {
 	(void) pvParameters;
@@ -631,13 +634,14 @@ void TaskPush2WWW(void *pvParameters)  // This is a task.
 	#ifdef CFG_GSHEET
 	#ifdef CFG_SQL
 
+
+
 		String  data_4_custom 	= "";
 		String  sql				= "";
 		int64_t	rec_count64		= 0;
 
 		xSemaphoreTake(SQL_mutex, portMAX_DELAY);
-	/*    	if (!db_open(DB_PATH, &db))
-		{
+		if (!db_open(DB_PATH, &db)){
 
 
 			// Check if anything in database to be sent?
@@ -645,7 +649,7 @@ void TaskPush2WWW(void *pvParameters)  // This is a task.
 
 			if(!GetDB_Count(sql.c_str(), rec_count64)){
 				rec_count = rec_count64;
-				debug_out("Count measSDS records = " + String(rec_count),		DEBUG_MED_INFO, 1);
+				debug_out("WWW: Count measSDS records = " + String(rec_count),			DEBUG_MED_INFO, 1);
 				if(rec_count){
 
 					String DateTime 	= "";
@@ -664,7 +668,7 @@ void TaskPush2WWW(void *pvParameters)  // This is a task.
 					RowID.replace(",", "");
 					RowID.trim();
 
-					debug_out("From timestamps DB: RowID=" + RowID + "; DateTime=" + DateTime,			DEBUG_ALWAYS, 1);
+					debug_out("WWW: From timestamps DB: RowID=" + RowID + "; DateTime=" + DateTime,			DEBUG_ALWAYS, 1);
 
 					if(RowID){
 
@@ -680,10 +684,10 @@ void TaskPush2WWW(void *pvParameters)  // This is a task.
 						sql = "SELECT Id, lat, lon            FROM measGPS WHERE Id='" + RowID + "' LIMIT 1";
 						GetDB_Data(sql.c_str(), TEMP	, MeasGPS);
 
-						debug_out("From measSDS DB:" + MeasSDS,						DEBUG_ALWAYS, 1);
-						debug_out("From measPMS DB:" + MeasPMS,						DEBUG_ALWAYS, 1);
-						debug_out("From measBME DB:" + MeasBME,						DEBUG_ALWAYS, 1);
-						debug_out("From measGPS DB:" + MeasGPS,						DEBUG_ALWAYS, 1);
+						debug_out("WWW: From measSDS DB:" + MeasSDS,						DEBUG_ALWAYS, 1);
+						debug_out("WWW: From measPMS DB:" + MeasPMS,						DEBUG_ALWAYS, 1);
+						debug_out("WWW: From measBME DB:" + MeasBME,						DEBUG_ALWAYS, 1);
+						debug_out("WWW: From measGPS DB:" + MeasGPS,						DEBUG_ALWAYS, 1);
 
 						vTaskDelay(500);  // one tick delay (1ms) in between reads for stability
 
@@ -703,7 +707,7 @@ void TaskPush2WWW(void *pvParameters)  // This is a task.
 
 
 						// GPS data
-						debug_out("Prepare JSON.",									DEBUG_ALWAYS, 1);
+						debug_out("WWW: Prepare JSON.",									DEBUG_ALWAYS, 1);
 
 						data += Var2Json(F("datetime"),						"23125");//DateTime);
 						data += Var2Json(F("GPS_lat"),						"325");//MeasGPS);
@@ -723,7 +727,7 @@ void TaskPush2WWW(void *pvParameters)  // This is a task.
 						data += "]}";
 
 						// prepare for googlesheet script
-						debug_out("Finalize data variable.",						DEBUG_ALWAYS, 1);
+						debug_out("WWW: Finalize data variable.",						DEBUG_ALWAYS, 1);
 
 						data.remove(0, 1);
 						data = "{\"espid\": \"" + esp_chipid + "\", \"count_sends\": \"" + "DB" + "\"," + data + "}";
@@ -735,18 +739,18 @@ void TaskPush2WWW(void *pvParameters)  // This is a task.
 	//						data = data + ",\"TaskArchiveMeas\":"	+Float2String(uxHighWaterMark_TaskArchiveMeas, 	1, 6);
 	//						data = data + ",\"TaskReadSensors\":"	+Float2String(uxHighWaterMark_TaskReadSensors, 	1, 6);
 	//						data = data + ",\"TaskDisplay\":"		+Float2String(uxHighWaterMark_TaskDisplay, 		1, 6);
-						debug_out("Finalize data variable2.",						DEBUG_ALWAYS, 1);
+						debug_out("WWW: Finalize data variable2.",						DEBUG_ALWAYS, 1);
 
 						data += "}}}";
 
-						debug_out("Send from buffer to spreadsheet", 				DEBUG_ALWAYS, 1);
+						debug_out("WWW: Send from buffer to spreadsheet", 				DEBUG_ALWAYS, 1);
 						payload = payload_base + data;
 						vTaskDelay(500);  // one tick delay (1ms) in between reads for stability
 
 						// Connect to WiFi
-						digitalWrite(LED_BUILTIN, HIGH);   	// turn the LED on (HIGH is the voltage level)
 
 
+/*
 
 							// Connect to spreadsheet
 							client = new HTTPSRedirect(httpsPort);
@@ -801,27 +805,23 @@ void TaskPush2WWW(void *pvParameters)  // This is a task.
 							// delete HTTPSRedirect object
 							delete client;
 							client = nullptr;
+*/
 
-
-
-						Serial.print(F("client object deleted"));
-
-						digitalWrite(LED_BUILTIN, LOW);    	// turn the LED off by making the voltage LOW
-
+						debug_out(F("WWW: Client object deleted"), 				DEBUG_ALWAYS, 1);
 					}
 				}
 			}
 		}
 
 		sqlite3_close(db);
-	*/
+
 		xSemaphoreGive(SQL_mutex);
 
 	#endif
 	#endif
 
 
-		vTaskDelay(10000);  // one tick delay (1ms) in between reads for stability
+		vTaskDelay(5000);  // one tick delay (1ms) in between reads for stability
 	}
 	vTaskDelete( NULL );
 }
@@ -883,7 +883,12 @@ void TaskArchiveMeas(void *pvParameters)  // This is a task.
 		  BMEmeasT.ArchPush();
 		  BMEmeasP.ArchPush();
 
-		  Store2DB();
+		  if(now > 1577836800){					// check if time was set
+			  Store2DB();						// no reason to store values without timestamp
+		  }
+		  else{
+			  debug_out(F("Time was not set. No DB push"), DEBUG_MIN_INFO, 1);
+		  }
 	  }
 
   }
@@ -931,8 +936,6 @@ void TaskDisplay(void *pvParameters)  // This is a task.
 
 
 
-
-
 void TaskWiFi(void *pvParameters)  // This is a task.
 {
 	(void) pvParameters;
@@ -949,23 +952,23 @@ void TaskWiFi(void *pvParameters)  // This is a task.
 
 			if (!WiFi.isConnected()) {
 
-
 				debug_out(F("WiFi in cycle unable to reconnect"), 		DEBUG_ERROR, 1);
 			}
 	    }
 		else {
-			debug_out(F("WiFi connected at IP address: "), 	DEBUG_ALWAYS, 0);
-			debug_out(WiFi.localIP().toString(), 			DEBUG_ALWAYS, 1);
+			debug_out(F("WiFi connected at IP address: "), 				DEBUG_MED_INFO, 0);
+			debug_out(WiFi.localIP().toString(), 						DEBUG_MED_INFO, 1);
 
 			//init and get the time
 			configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
 
+			time(&now);
+			debug_out("UNIX time: " + String(now), DEBUG_ALWAYS, 1);
 
-			printLocalTime();
+			//printLocalTime();
 		}
 
 		xSemaphoreGive(SQL_mutex);
-
 
 	    // Wait for the next cycle.
 		vTaskDelay(5000);  // one tick delay (1ms) in between reads for stability
@@ -1131,13 +1134,6 @@ void display_values() {
 		display_lines[2] = "Arch " + check_display_value(uxHighWaterMark_TaskArchiveMeas	, 0, 0, 6) + "  Disp" + check_display_value(uxHighWaterMark_TaskDisplay		, 0, 0, 6);
 		display_lines[3] = "WiFi " + check_display_value(uxHighWaterMark_TaskWiFi			, 0, 0, 6) + "  www " + check_display_value(uxHighWaterMark_TaskPush2WWW	, 0, 0, 6);
 
-//		display_lines[0] = "";//"IP:      " + WiFi.localIP().toString();
-//		display_lines[1] = "";//"SSID:    " + WiFi.SSID();
-//		display_lines[2] = "";//"Signal:  " + String(calcWiFiSignalQuality(WiFi.RSSI())) + "%";
-		//if (WiFi.status() != WL_CONNECTED) {
-		//	display_lines[2] = "Signal:  NO CONNECTION!";
-		//}
-
 		break;
 	case (6):
 		display_header = F("Device Info");
@@ -1145,17 +1141,13 @@ void display_values() {
 		display_lines[1] = "SSID:  "  + WiFi.SSID() + " (" + String(calcWiFiSignalQuality(WiFi.RSSI())) + "%)";
 		display_lines[2] = "IP:    "  + WiFi.localIP().toString();
 
-
-
 		if(BUT_B_PRESS){
 			BUT_DB_CLEAR_FLAG = true;
 		}
 
-
 		break;
 	case (11):
 		display_header = "Measurements";
-
 
 		break;
 	}
@@ -1179,22 +1171,6 @@ void display_values() {
 			display.setTextAlignment(TEXT_ALIGN_CENTER);
 			display.drawString(64, 52, displayGenerateFooter(screen_count));
 		}
-
-//		// Show time on display
-//		struct tm timeinfo;
-//		if(got_ntp){
-//			if (getLocalTime(&timeinfo)) {
-//				char timeStringBuff[10];
-//				strftime(timeStringBuff, sizeof(timeStringBuff), "%H:%M:%S", &timeinfo);
-//				display.drawString(108, 52, String(timeStringBuff));
-//			}
-//			else{
-//				display.drawString(108, 52, "-- -- --");
-//			}
-//		}
-//		else{
-//			display.drawString(108, 52, "-- -- --");
-//		}
 	}
 	else{
 		for(int i=1; i<display.getWidth(); i++){
@@ -1505,7 +1481,8 @@ void Store2DB(){
 		*/
 
 		String query = "";
-		String DateTime = String(millis());//"2020.02.19 18:65:26.325";
+		time(&now);
+		String DateTime = String(now);//"2020.02.19 18:65:26.325";
 
 		query  = "INSERT INTO timestamps (datetime) VALUES ('" + DateTime + "')";
 		rc = db_exec(db, query.c_str());
@@ -1591,7 +1568,7 @@ void ClearDB(){
 
 		rc = db_exec(db, query.c_str());
 		if (rc != SQLITE_OK) {
-			debug_out(F("Table 'measBME' not updated"),			DEBUG_ERROR, 1);
+			debug_out(F("ClearDB: not updated"),			DEBUG_ERROR, 1);
 		}
 
 		rec_count = 0;
