@@ -7,9 +7,7 @@
  *
  */
 #pragma once
-	//#include <esp_wifi.h>						 	// must be first
-	//#include <WiFiClient.h>
-	#include <WiFiClientSecure.h>
+#include <WiFiClientSecure.h>
 
 // Un-comment for extra functionality
 //#define EXTRA_FNS

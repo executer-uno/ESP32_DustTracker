@@ -153,7 +153,7 @@ HardwareSerial 	serialPMS(2);
 	const char* host = "script.google.com";
 	const int httpsPort = 443;
 	const char* fingerprint = "";
-	int error_count = 0;
+
 
 	String url =  String("/macros/s/") + GScriptId + "/exec?value=Hello";		// Write to Google Spreadsheet
 	String url2 = String("/macros/s/") + GScriptId + "/exec?cal";				// Fetch Google Calendar events for 1 week ahead
@@ -208,7 +208,6 @@ void TaskKeyboard( 		void *pvParameters );
 void TaskArchiveMeas( 	void *pvParameters );
 void TaskDisplay( 		void *pvParameters );
 void TaskWiFi( 			void *pvParameters );
-void TaskPush2WWW( 		void *pvParameters );
 
 static TaskHandle_t xTaskDisplay_handle = NULL;
 static TaskHandle_t xTaskArchiveMeas_handle = NULL;
@@ -220,7 +219,6 @@ UBaseType_t uxHighWaterMark_TaskKeyboard;
 UBaseType_t uxHighWaterMark_TaskArchiveMeas;
 UBaseType_t uxHighWaterMark_TaskDisplay;
 UBaseType_t uxHighWaterMark_TaskWiFi;
-UBaseType_t uxHighWaterMark_TaskPush2WWW;
 
 SemaphoreHandle_t I2C_mutex;	// Mutex to access to I2C interface
 SemaphoreHandle_t Serial_mutex;	// Mutex to access to Serial RS232 interface
@@ -253,6 +251,9 @@ void setup() {
 		Serial.begin(115200, SERIAL_8N1, DEB_RX, DEB_TX);			 				// for HW UART GPS
 	#endif
 
+	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
+
+
 	time(&now);
 	debug_out("Undefined raw time:" + String(now), DEBUG_ALWAYS, 1);
 
@@ -277,6 +278,8 @@ void setup() {
 		#endif
 	#endif
 
+	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
+
 	#ifdef CFG_GPS
 	// time to connect to bluetooth
 	String progress = "";
@@ -293,6 +296,7 @@ void setup() {
 	}
 	#endif
 
+	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
 
 	#ifdef CFG_BME280
 		if (cfg::bme280_read) {
@@ -307,9 +311,14 @@ void setup() {
 			}
 		}
 	#endif
+
+	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
+
 	#ifdef CFG_GPS
 		initGPS();
 	#endif
+
+	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
 
 
 	#ifdef CFG_SQL
@@ -420,36 +429,13 @@ void setup() {
 
 	#endif
 
+	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
+
 	connectWifi();
 
+	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
+
 //  // Now set up two tasks to run independently.
-	xTaskCreatePinnedToCore(
-		TaskBlink
-		,  "Blink"   // A name just for humans
-		,  1024  // This stack size can be checked & adjusted by reading the Stack Highwater
-		,  NULL
-		,  1  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-		,  NULL
-		,  SECOND_CORE);	//SECOND_CORE);
-
-	xTaskCreatePinnedToCore(
-		TaskPush2WWW
-		,  "Internet"   // A name just for humans
-		,  1024*8  // This stack size can be checked & adjusted by reading the Stack Highwater
-		,  NULL
-		,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-		,  NULL
-		,  SECOND_CORE);	//SECOND_CORE);
-
-  // Now set up two tasks to run independently.
-	xTaskCreatePinnedToCore(
-		TaskWiFi
-		,  "WiFi_reconnect"   // A name just for humans
-		,  1024*2  	// This stack size can be checked & adjusted by reading the Stack Highwater
-		,  NULL
-		,  1  		// Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
-		,  NULL
-		,  SECOND_CORE);	//SECOND_CORE);
 
 
 	xTaskCreatePinnedToCore(
@@ -461,6 +447,8 @@ void setup() {
 		,  NULL
 		,  ARDUINO_RUNNING_CORE);
 
+	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
+
 	xTaskCreatePinnedToCore(
 		TaskDiagLevel
 		,  "DiagLevel"
@@ -469,6 +457,8 @@ void setup() {
 		,  2  // Priority
 		,  NULL
 		,  ARDUINO_RUNNING_CORE);
+
+	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
 
 	xTaskCreatePinnedToCore(
 		TaskKeyboard
@@ -479,6 +469,8 @@ void setup() {
 		,  NULL
 		,  ARDUINO_RUNNING_CORE);
 
+	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
+
 	xTaskCreatePinnedToCore(
 		TaskArchiveMeas
 		,  "CyclicArcive"
@@ -487,6 +479,8 @@ void setup() {
 		,  1  // Priority
 		,  &xTaskArchiveMeas_handle
 		,  ARDUINO_RUNNING_CORE);
+
+	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
 
 	xTaskCreatePinnedToCore(
 		TaskDisplay
@@ -497,13 +491,265 @@ void setup() {
 		,  &xTaskDisplay_handle
 		,  ARDUINO_RUNNING_CORE);
 
+	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
+
+	xTaskCreatePinnedToCore(
+		TaskBlink
+		,  "Blink"   // A name just for humans
+		,  1024  // This stack size can be checked & adjusted by reading the Stack Highwater
+		,  NULL
+		,  1  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
+		,  NULL
+		,  SECOND_CORE);	//SECOND_CORE);
+
+	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
+
+	xTaskCreatePinnedToCore(
+		TaskWiFi
+		,  "WiFi_reconnect"   // A name just for humans
+		,  1024*2  	// This stack size can be checked & adjusted by reading the Stack Highwater
+		,  NULL
+		,  1  		// Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
+		,  NULL
+		,  SECOND_CORE);	//SECOND_CORE);
+
+	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
+
+/*	xTaskCreatePinnedToCore(
+		TaskPush2WWW
+		,  "Internet"   // A name just for humans
+		,  1024*90  // This stack size can be checked & adjusted by reading the Stack Highwater
+		,  NULL
+		,  2  // Priority, with 3 (configMAX_PRIORITIES - 1) being the highest, and 0 being the lowest.
+		,  NULL
+		,  SECOND_CORE);	//SECOND_CORE);
+
+	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
+*/
+
   // Now the task scheduler, which takes over control of scheduling individual tasks, is automatically started.
 }
 
 void loop()
 {
-	// No job
-	vTaskDelete( NULL );
+#ifdef CFG_GSHEET
+#ifdef CFG_SQL
+
+	String  sql				= "";
+	String  data			= "";
+
+	String  RowID			= "";
+	String  TEMP1 			= "";
+	String  TEMP2 			= "";
+
+	int64_t	rec_count64		= 0;
+	bool	savedone		= false;
+
+	xSemaphoreTake(SQL_mutex, portMAX_DELAY);
+	data	="";
+
+	Serial.printf("ESP: 100 free heap: %u\n", ESP.getFreeHeap());
+
+	if (WiFi.isConnected()) {
+		if (!db_open(DB_PATH, &db)){
+
+			// Check if anything in database to be sent?
+			sql = F("SELECT COUNT(*) FROM timestamps WHERE sendGS IS NULL");
+
+			if(!GetDB_Count(sql.c_str(), rec_count64)){
+				rec_count = rec_count64;
+				debug_out("WWW: Count measSDS records = " + String(rec_count),									DEBUG_MIN_INFO, 1);
+				if(rec_count){
+
+					String DateTime 	= "";
+
+					String MeasSDS		= "";
+					String MeasPMS		= "";
+					String MeasGPS		= "";
+					String MeasBME		= "";
+
+
+
+					sql = F("SELECT datetime, Id FROM timestamps WHERE sendGS IS NULL ORDER BY datetime ASC LIMIT 1");
+					GetDB_Data(sql.c_str(), DateTime	, RowID);
+
+					RowID.replace(",", "");
+					RowID.trim();
+
+					debug_out("WWW: From timestamps DB: RowID= " + RowID + "; DateTime= " + DateTime,			DEBUG_MED_INFO, 1);
+
+					if(RowID){
+
+						sql = "SELECT Id, PM100, PM025        FROM measSDS WHERE Id='" + RowID + "' LIMIT 1";
+						GetDB_Data(sql.c_str(), TEMP1	, MeasSDS);
+
+						sql = "SELECT Id, PM100, PM025, PM010 FROM measPMS WHERE Id='" + RowID + "' LIMIT 1";
+						GetDB_Data(sql.c_str(), TEMP1	, MeasPMS);
+
+						sql = "SELECT Id, temp, humid, press  FROM measBME WHERE Id='" + RowID + "' LIMIT 1";
+						GetDB_Data(sql.c_str(), TEMP1	, MeasBME);
+
+
+#ifdef CFG_GPS
+						sql = "SELECT Id, lat, lon            FROM measGPS WHERE Id='" + RowID + "' LIMIT 1";
+						GetDB_Data(sql.c_str(), TEMP1	, MeasGPS);
+#endif
+
+						debug_out(("WWW: From measSDS DB: ") + MeasSDS,											DEBUG_MED_INFO, 1);
+						debug_out(("WWW: From measPMS DB: ") + MeasPMS,											DEBUG_MED_INFO, 1);
+						debug_out(("WWW: From measBME DB: ") + MeasBME,											DEBUG_MED_INFO, 1);
+						debug_out(("WWW: From measGPS DB: ") + MeasGPS,											DEBUG_MED_INFO, 1);
+
+						vTaskDelay(500);  // one tick delay (1ms) in between reads for stability
+
+						// Send data
+						// ....
+						// ....
+
+						data = FPSTR(data_first_part);
+						data.replace("{v}", SOFTWARE_VERSION);
+
+
+						// GPS data
+						debug_out("WWW: Prepare JSON.",															DEBUG_MED_INFO, 1);
+
+						data += Var2Json(F("datetime"),						DateTime);
+						data += Var2Json(F("GPS_lat"),						"000");//MeasGPS);
+						data += Var2Json(F("GPS_lon"),						"000");//MeasGPS);
+
+						data += Var2Json(F("BME280_pressure"),				StrSplitItem(MeasBME, ',', 3));
+						data += Var2Json(F("BME280_temperature"), 			StrSplitItem(MeasBME, ',', 1));
+						data += Var2Json(F("BME280_humidity"), 				StrSplitItem(MeasBME, ',', 2));
+
+						data += Var2Json(F("SDS_P1"),						StrSplitItem(MeasSDS, ',', 1)); // PM10.0
+						data += Var2Json(F("SDS_P2"),						StrSplitItem(MeasSDS, ',', 2)); // PM 2.5
+
+						data += Var2Json(F("PMS_P1"),						StrSplitItem(MeasGPS, ',', 1)); // PM10.0
+						data += Var2Json(F("PMS_P2"),						StrSplitItem(MeasGPS, ',', 2)); // PM 2.5
+						data += Var2Json(F("PMS_P3"),						StrSplitItem(MeasGPS, ',', 3)); // PM 1.0
+
+						data += "]}";
+
+						// prepare fo gscript
+
+						data.remove(0, 1);
+						data = "{\"espid\": \"" + esp_chipid + "\", \"count_sends\": \"" + "DB" + "\"," + data + "}";
+						data.replace("\"sensordatavalues\":[", "\"sensordatavalues\":{");
+						data.replace("}","");
+						data.replace("]","");
+						data += "}}}";
+						payload = payload_base + data;
+
+
+						debug_out(F("WWW: Send from buffer to spreadsheet. Payload:"), 							DEBUG_MIN_INFO, 1);
+						debug_out(payload, 																		DEBUG_MIN_INFO, 1);
+
+					}
+				}
+			}
+		}
+
+		sqlite3_close(db);
+
+		vTaskDelay(50);  // one tick delay (1ms) in between reads for stability
+
+		Serial.printf("ESP: 101 free heap: %u\n", ESP.getFreeHeap());
+
+
+		if(data.length()){
+
+			// Connect to spreadsheet
+
+			client = new HTTPSRedirect(httpsPort);
+			client->setPrintResponseBody(false);
+			client->setContentTypeHeader("application/json");
+
+			Serial.printf("ESP: 102 free heap: %u\n", ESP.getFreeHeap());
+
+			vTaskDelay(50);  // one tick delay (1ms) in between reads for stability
+			debug_out(F("WWW: Client object created"), 											DEBUG_MED_INFO, 1);
+
+			if (client != nullptr){
+				if (!client->connected()){
+
+					// Try to connect for a maximum of 1 times
+					for (int i=0; i<1; i++){
+
+						debug_out(F("WWW: Calling Client->connect"), 							DEBUG_MED_INFO, 1);
+						vTaskDelay(50);
+
+						int retval = client->connect(host, httpsPort);
+						if (retval == 1) {
+							 break;
+						}
+						else {
+							debug_out(F("Connection failed. Retrying..."), 						DEBUG_WARNING, 1);
+							vTaskDelay(50);
+							Serial.println(client->getResponseBody() );
+						}
+					}
+				}
+			}
+			else{
+				debug_out(F("Error creating client object!"), 									DEBUG_ERROR, 1);
+			}
+			if (!client->connected()){
+				debug_out(F("Connection failed. Stand by till next period"), 					DEBUG_ERROR, 1);
+			}
+			else
+			{
+				debug_out(F("WWW: Client object requests to Spreadsheet"), 						DEBUG_MED_INFO, 1);
+
+				if(client->POST(url2, host, payload)){
+					debug_out(F("Spreadsheet updated"), DEBUG_MIN_INFO, 1);
+					//savedone	=	 true;
+
+				}
+				else{
+					debug_out(F("Spreadsheet update fails: "), DEBUG_MIN_INFO, 1);
+				}
+			}
+
+
+			// delete HTTPSRedirect object
+			delete client;
+			client = nullptr;
+
+			Serial.printf("ESP: 03 Min level of free heap: %u\n", ESP.getMinFreeHeap());
+
+
+			debug_out(F("WWW: Client object deleted"), 											DEBUG_MED_INFO, 1);
+
+			if(savedone){
+
+				// Data sent successfully. Remove record from DB
+				if (!db_open(DB_PATH, &db)){
+
+
+					sql = "UPDATE timestamps SET sendGS = 1 WHERE Id='" + RowID + "';";
+					GetDB_Data(sql.c_str(), TEMP1	, TEMP2);							// Mark record as sended
+
+					debug_out(F("Spreadsheet updated sucesfully. Data row marked"), 			DEBUG_MIN_INFO, 1);
+
+
+				}
+				sqlite3_close(db);
+			}
+
+		}
+	}
+	else{
+		debug_out("WWW: WiFi not connected. Cycle skipped",										DEBUG_ERROR, 1);
+	}
+
+
+	xSemaphoreGive(SQL_mutex);
+
+#endif
+#endif
+
+
+	vTaskDelay(10000);  // one tick delay (1ms) in between reads for stability
 }
 
 
@@ -619,211 +865,6 @@ void TaskBlink(void *pvParameters)  // This is a task.
 
   }
   vTaskDelete( NULL );
-}
-
-
-
-void TaskPush2WWW(void *pvParameters)  // This is a task.
-{
-	(void) pvParameters;
-
-	for (;;){ // A Task shall never return or exit.
-
-		uxHighWaterMark_TaskPush2WWW = uxTaskGetStackHighWaterMark( NULL );
-
-	#ifdef CFG_GSHEET
-	#ifdef CFG_SQL
-
-
-
-		String  data_4_custom 	= "";
-		String  sql				= "";
-		int64_t	rec_count64		= 0;
-
-		xSemaphoreTake(SQL_mutex, portMAX_DELAY);
-		if (!db_open(DB_PATH, &db)){
-
-
-			// Check if anything in database to be sent?
-			sql = "SELECT COUNT(*) FROM timestamps WHERE sendGS IS NULL";
-
-			if(!GetDB_Count(sql.c_str(), rec_count64)){
-				rec_count = rec_count64;
-				debug_out("WWW: Count measSDS records = " + String(rec_count),			DEBUG_MED_INFO, 1);
-				if(rec_count){
-
-					String DateTime 	= "";
-					String TEMP 		= "";
-
-					String MeasSDS		= "";
-					String MeasPMS		= "";
-					String MeasGPS		= "";
-					String MeasBME		= "";
-
-					String RowID		= "";
-
-					sql = "SELECT datetime, Id FROM timestamps WHERE sendGS IS NULL ORDER BY datetime ASC LIMIT 1";
-					GetDB_Data(sql.c_str(), DateTime	, RowID);
-
-					RowID.replace(",", "");
-					RowID.trim();
-
-					debug_out("WWW: From timestamps DB: RowID=" + RowID + "; DateTime=" + DateTime,			DEBUG_ALWAYS, 1);
-
-					if(RowID){
-
-						sql = "SELECT Id, PM100, PM025        FROM measSDS WHERE Id='" + RowID + "' LIMIT 1";
-						GetDB_Data(sql.c_str(), TEMP	, MeasSDS);
-
-						sql = "SELECT Id, PM100, PM025, PM010 FROM measPMS WHERE Id='" + RowID + "' LIMIT 1";
-						GetDB_Data(sql.c_str(), TEMP	, MeasPMS);
-
-						sql = "SELECT Id, temp, humid, press  FROM measBME WHERE Id='" + RowID + "' LIMIT 1";
-						GetDB_Data(sql.c_str(), TEMP	, MeasBME);
-
-						sql = "SELECT Id, lat, lon            FROM measGPS WHERE Id='" + RowID + "' LIMIT 1";
-						GetDB_Data(sql.c_str(), TEMP	, MeasGPS);
-
-						debug_out("WWW: From measSDS DB:" + MeasSDS,						DEBUG_ALWAYS, 1);
-						debug_out("WWW: From measPMS DB:" + MeasPMS,						DEBUG_ALWAYS, 1);
-						debug_out("WWW: From measBME DB:" + MeasBME,						DEBUG_ALWAYS, 1);
-						debug_out("WWW: From measGPS DB:" + MeasGPS,						DEBUG_ALWAYS, 1);
-
-						vTaskDelay(500);  // one tick delay (1ms) in between reads for stability
-
-						// Send data
-						// ....
-						// ....
-
-						String data = FPSTR(data_first_part);
-						data.replace("{v}", SOFTWARE_VERSION);
-
-
-						DateTime 	= "32145";
-						MeasSDS		= "235.5";
-						MeasPMS		= "354.1";
-						MeasGPS		= "854.7";
-						MeasBME		= "321.8";
-
-
-						// GPS data
-						debug_out("WWW: Prepare JSON.",									DEBUG_ALWAYS, 1);
-
-						data += Var2Json(F("datetime"),						"23125");//DateTime);
-						data += Var2Json(F("GPS_lat"),						"325");//MeasGPS);
-						data += Var2Json(F("GPS_lon"),						"231");//MeasGPS);
-
-						data += Var2Json(F("BME280_pressure"),				"123");//MeasBME);
-						data += Var2Json(F("BME280_temperature"), 			"951");//MeasBME);
-						data += Var2Json(F("BME280_humidity"), 				"753");//MeasBME);
-
-						data += Var2Json(F("SDS_P1"),						"852");//MeasSDS);
-						data += Var2Json(F("SDS_P2"),						"147");//MeasSDS);
-
-						data += Var2Json(F("PMS_P1"),						"325");//MeasGPS);
-						data += Var2Json(F("PMS_P2"),						"852");//MeasGPS);
-						data += Var2Json(F("PMS_P3"),						"987");//MeasGPS);
-
-						data += "]}";
-
-						// prepare for googlesheet script
-						debug_out("WWW: Finalize data variable.",						DEBUG_ALWAYS, 1);
-
-						data.remove(0, 1);
-						data = "{\"espid\": \"" + esp_chipid + "\", \"count_sends\": \"" + "DB" + "\"," + data + "}";
-						data.replace("\"sensordatavalues\":[", "\"sensordatavalues\":{");
-						data.replace("}","");
-						data.replace("]","");
-
-	//						data = data +  "\"TaskBlink\":"			+Float2String(uxHighWaterMark_TaskBlink, 		1, 6);
-	//						data = data + ",\"TaskArchiveMeas\":"	+Float2String(uxHighWaterMark_TaskArchiveMeas, 	1, 6);
-	//						data = data + ",\"TaskReadSensors\":"	+Float2String(uxHighWaterMark_TaskReadSensors, 	1, 6);
-	//						data = data + ",\"TaskDisplay\":"		+Float2String(uxHighWaterMark_TaskDisplay, 		1, 6);
-						debug_out("WWW: Finalize data variable2.",						DEBUG_ALWAYS, 1);
-
-						data += "}}}";
-
-						debug_out("WWW: Send from buffer to spreadsheet", 				DEBUG_ALWAYS, 1);
-						payload = payload_base + data;
-						vTaskDelay(500);  // one tick delay (1ms) in between reads for stability
-
-						// Connect to WiFi
-
-
-/*
-
-							// Connect to spreadsheet
-							client = new HTTPSRedirect(httpsPort);
-							client->setPrintResponseBody(false);
-							client->setContentTypeHeader("application/json");
-
-							if (client != nullptr){
-								if (!client->connected()){
-
-									// Try to connect for a maximum of 3 times
-									for (int i=0; i<3; i++){
-										int retval = client->connect(host, httpsPort);
-										if (retval == 1) {
-											 break;
-										}
-										else {
-											debug_out(F("Connection failed. Retrying..."), DEBUG_MIN_INFO, 1);
-											Serial.println(client->getResponseBody() );
-											error_count++;
-										}
-									}
-								}
-							}
-							else{
-								debug_out(F("Error creating client object!"), DEBUG_MIN_INFO, 1);
-								error_count++;
-							}
-							if (!client->connected()){
-								debug_out(F("Connection failed. Stand by till next period"), DEBUG_MIN_INFO, 1);
-							}
-							else
-							{
-
-								if(client->POST(url2, host, payload)){
-									debug_out(F("Spreadsheet updated"), DEBUG_MIN_INFO, 1);
-
-									// Data sent sucesfully. Remove record from DB
-
-	//									sql = "UPDATE timestamps SET sendGS = 1 WHERE Id='" + RowID + "';";
-	//									GetDB_Data(sql.c_str(), TEMP	, MeasSDS);							// Mark record as sended
-	//
-	//									debug_out(F("Spreadsheet updated sucesfully. Data row marked"), DEBUG_MIN_INFO, 1);
-
-								}
-								else{
-									error_count++;
-									debug_out(F("Spreadsheet update fails: "), DEBUG_MIN_INFO, 1);
-								}
-							}
-
-
-							// delete HTTPSRedirect object
-							delete client;
-							client = nullptr;
-*/
-
-						debug_out(F("WWW: Client object deleted"), 				DEBUG_ALWAYS, 1);
-					}
-				}
-			}
-		}
-
-		sqlite3_close(db);
-
-		xSemaphoreGive(SQL_mutex);
-
-	#endif
-	#endif
-
-
-		vTaskDelay(5000);  // one tick delay (1ms) in between reads for stability
-	}
-	vTaskDelete( NULL );
 }
 
 
@@ -1129,10 +1170,10 @@ void display_values() {
 	case (5):
 		display_header = F("Stack free");
 
-		display_lines[0] = "Blink" + check_display_value(uxHighWaterMark_TaskBlink			, 0, 0, 6) + "  Sens" + check_display_value(uxHighWaterMark_TaskReadSensors	, 0, 0, 6);
-		display_lines[1] = "Diag " + check_display_value(uxHighWaterMark_TaskDiagLevel		, 0, 0, 6) + "  Keyb" + check_display_value(uxHighWaterMark_TaskKeyboard	, 0, 0, 6);
-		display_lines[2] = "Arch " + check_display_value(uxHighWaterMark_TaskArchiveMeas	, 0, 0, 6) + "  Disp" + check_display_value(uxHighWaterMark_TaskDisplay		, 0, 0, 6);
-		display_lines[3] = "WiFi " + check_display_value(uxHighWaterMark_TaskWiFi			, 0, 0, 6) + "  www " + check_display_value(uxHighWaterMark_TaskPush2WWW	, 0, 0, 6);
+		display_lines[0] = "Blink" + check_display_value(uxHighWaterMark_TaskBlink			, 0, 0, 6) + "    Sens" + check_display_value(uxHighWaterMark_TaskReadSensors	, 0, 0, 6);
+		display_lines[1] = "Diag " + check_display_value(uxHighWaterMark_TaskDiagLevel		, 0, 0, 6) + "    Keyb" + check_display_value(uxHighWaterMark_TaskKeyboard	, 0, 0, 6);
+		display_lines[2] = "Arch " + check_display_value(uxHighWaterMark_TaskArchiveMeas	, 0, 0, 6) + "    Disp" + check_display_value(uxHighWaterMark_TaskDisplay		, 0, 0, 6);
+		display_lines[3] = "WiFi " + check_display_value(uxHighWaterMark_TaskWiFi			, 0, 0, 6);
 
 		break;
 	case (6):
@@ -1633,4 +1674,37 @@ static int32_t calcWiFiSignalQuality(int32_t rssi) {
 		rssi = -100;
 	}
 	return (rssi + 100) * 2;
+}
+
+
+String StrSplitItem(const String& toSplit, const char Delim, int Index) {
+
+	String s="";
+	int pos1 = 0;
+	int pos2 = 0;
+	int count = 1;
+
+	if(Index<1){
+		return s;
+	}
+
+	while(count <= Index){
+
+		pos1 = pos2;
+		pos2 = toSplit.indexOf(Delim, pos1+1);
+
+		count++;
+	}
+
+	pos1 ? pos1++ : 0;
+
+	if(pos2 < 0){
+		s = toSplit.substring(pos1);
+	}
+	else{
+		s = toSplit.substring(pos1, pos2);
+	}
+
+	return s;
+
 }

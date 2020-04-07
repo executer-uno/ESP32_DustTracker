@@ -6,19 +6,12 @@
  *  All rights reserved.
  *
  */
-#include "HTTPSRedirect.h"
-
 #include <Arduino.h>
-#include <esp_wifi.h>						 	// must be first
-#include <WiFiClient.h>
-#include <WiFiClientSecure.h>
-
-#include "BluetoothSerial.h" //Header File for Serial Bluetooth, will be added by default into Arduino
-
-extern	BluetoothSerial Serial;
+extern	HardwareSerial 	Serial;
 
 
 
+#include "HTTPSRedirect.h"
 #include "DebugMacros.h"
 
 HTTPSRedirect::HTTPSRedirect(void) : _httpsPort(443){
