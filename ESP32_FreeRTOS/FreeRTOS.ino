@@ -630,6 +630,8 @@ void loop()
 						data.replace("}","");
 						data.replace("]","");
 						data += "}}}";
+						data.replace(",}}}","}}}");
+
 						payload = payload_base + data;
 
 
