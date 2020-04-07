@@ -326,31 +326,31 @@ void setup() {
 		yield();
 
 		if(!SD.begin()){
-			debug_out(F("Card Mount Failed."),					DEBUG_ALWAYS, 1);
+			debug_out(F("Card Mount Failed."),													DEBUG_ALWAYS, 1);
 		}
 		uint8_t cardType = SD.cardType();
 
 		if(cardType == CARD_NONE){
-			debug_out(F("No SD card attached."),				DEBUG_ALWAYS, 1);
+			debug_out(F("No SD card attached."),												DEBUG_ALWAYS, 1);
 		}
 		else
 		{
-			debug_out(F("SD Card Type: "),						DEBUG_ALWAYS, 0);
+			debug_out(F("SD Card Type: "),														DEBUG_ALWAYS, 0);
 
 			if(cardType == CARD_MMC){
-				debug_out(F("MMC"),							DEBUG_ALWAYS, 1);
+				debug_out(F("MMC"),																DEBUG_ALWAYS, 1);
 			} else if(cardType == CARD_SD){
-				debug_out(F("SDSC"),							DEBUG_ALWAYS, 1);
+				debug_out(F("SDSC"),															DEBUG_ALWAYS, 1);
 			} else if(cardType == CARD_SDHC){
-				debug_out(F("SDHC"),							DEBUG_ALWAYS, 1);
+				debug_out(F("SDHC"),															DEBUG_ALWAYS, 1);
 			} else {
-				debug_out(F("UNKNOWN"),						DEBUG_ALWAYS, 1);
+				debug_out(F("UNKNOWN"),															DEBUG_ALWAYS, 1);
 			}
 			uint64_t cardSize = SD.cardSize() / (1024 * 1024);
 
-			debug_out("SD Card Size: "+ String(int(cardSize)) 						+ "MB",DEBUG_ALWAYS, 1);
-			debug_out("Total space:  "+ String(int(SD.totalBytes() / (1024 * 1024)))+ "MB",DEBUG_ALWAYS, 1);
-			debug_out("Used space:   "+ String(int(SD.usedBytes() / (1024 * 1024)))	+ "MB",DEBUG_ALWAYS, 1);
+			debug_out("SD Card Size: "+ String(int(cardSize)) 						+ "MB",		DEBUG_ALWAYS, 1);
+			debug_out("Total space:  "+ String(int(SD.totalBytes() / (1024 * 1024)))+ "MB",		DEBUG_ALWAYS, 1);
+			debug_out("Used space:   "+ String(int(SD.usedBytes() / (1024 * 1024)))	+ "MB",		DEBUG_ALWAYS, 1);
 
 
 			sqlite3_initialize();
@@ -360,12 +360,12 @@ void setup() {
 
 				rc = db_exec(db, "PRAGMA page_size = 512;");
 				if (rc != SQLITE_OK) {
-					debug_out(F("PRAGMA page_size set failure"),							DEBUG_ERROR, 1);
+					debug_out(F("PRAGMA page_size set failure"),								DEBUG_ERROR, 1);
 				}
 
 				rc = db_exec(db, "PRAGMA default_cache_size = 200; PRAGMA cache_size = 200;");
 				if (rc != SQLITE_OK) {
-					debug_out(F("PRAGMA default_cache_size set failure"),					DEBUG_ERROR, 1);
+					debug_out(F("PRAGMA default_cache_size set failure"),						DEBUG_ERROR, 1);
 				}
 
 
@@ -373,25 +373,25 @@ void setup() {
 				rc = db_exec(db, "CREATE TABLE IF NOT EXISTS timestamps (Id integer PRIMARY KEY, datetime integer, sendGS BOOL, sendAD BOOL);");
 				if (rc != SQLITE_OK) {
 					 sqlite3_close(db);
-					 debug_out(F("Table 'timestamps' creation failure"),			DEBUG_ERROR, 1);
+					 debug_out(F("Table 'timestamps' creation failure"),						DEBUG_ERROR, 1);
 					 return;
 				}
 
-				rc = db_exec(db, "CREATE TABLE IF NOT EXISTS measBME (Id integer PRIMARY KEY, temp REAL, press REAL, humid REAL);");
+				rc = db_exec(db, "CREATE TABLE IF NOT EXISTS measBME (Id integer PRIMARY KEY, temp TEXT, press TEXT, humid TEXT);");
 				if (rc != SQLITE_OK) {
 					 sqlite3_close(db);
 					 debug_out(F("Table measurements 'measBME' creation failure"),			DEBUG_ERROR, 1);
 					 return;
 				}
 
-				rc = db_exec(db, "CREATE TABLE IF NOT EXISTS measPMS (Id integer PRIMARY KEY, PM010 REAL, PM025 REAL, PM100 REAL);");
+				rc = db_exec(db, "CREATE TABLE IF NOT EXISTS measPMS (Id integer PRIMARY KEY, PM010 TEXT, PM025 TEXT, PM100 TEXT);");
 				if (rc != SQLITE_OK) {
 					 sqlite3_close(db);
 					 debug_out(F("Table measurements 'measPMS' creation failure"),			DEBUG_ERROR, 1);
 					 return;
 				}
 
-				rc = db_exec(db, "CREATE TABLE IF NOT EXISTS measSDS (Id integer PRIMARY KEY, PM025 REAL, PM100 REAL);");
+				rc = db_exec(db, "CREATE TABLE IF NOT EXISTS measSDS (Id integer PRIMARY KEY, PM025 TEXT, PM100 TEXT);");
 				if (rc != SQLITE_OK) {
 					 sqlite3_close(db);
 					 debug_out(F("Table measurements 'measSDS' creation failure"),			DEBUG_ERROR, 1);
@@ -548,8 +548,6 @@ void loop()
 	xSemaphoreTake(SQL_mutex, portMAX_DELAY);
 	data	="";
 
-	Serial.printf("ESP: 100 free heap: %u\n", ESP.getFreeHeap());
-
 	if (WiFi.isConnected()) {
 		if (!db_open(DB_PATH, &db)){
 
@@ -567,8 +565,6 @@ void loop()
 					String MeasPMS		= "";
 					String MeasGPS		= "";
 					String MeasBME		= "";
-
-
 
 					sql = F("SELECT datetime, Id FROM timestamps WHERE sendGS IS NULL ORDER BY datetime ASC LIMIT 1");
 					GetDB_Data(sql.c_str(), DateTime	, RowID);
@@ -589,11 +585,12 @@ void loop()
 						sql = "SELECT Id, temp, humid, press  FROM measBME WHERE Id='" + RowID + "' LIMIT 1";
 						GetDB_Data(sql.c_str(), TEMP1	, MeasBME);
 
-
 #ifdef CFG_GPS
 						sql = "SELECT Id, lat, lon            FROM measGPS WHERE Id='" + RowID + "' LIMIT 1";
 						GetDB_Data(sql.c_str(), TEMP1	, MeasGPS);
 #endif
+
+						MeasGPS = "99.9,99.9,";
 
 						debug_out(("WWW: From measSDS DB: ") + MeasSDS,											DEBUG_MED_INFO, 1);
 						debug_out(("WWW: From measPMS DB: ") + MeasPMS,											DEBUG_MED_INFO, 1);
@@ -602,20 +599,15 @@ void loop()
 
 						vTaskDelay(500);  // one tick delay (1ms) in between reads for stability
 
-						// Send data
-						// ....
-						// ....
-
 						data = FPSTR(data_first_part);
 						data.replace("{v}", SOFTWARE_VERSION);
-
 
 						// GPS data
 						debug_out("WWW: Prepare JSON.",															DEBUG_MED_INFO, 1);
 
 						data += Var2Json(F("datetime"),						DateTime);
-						data += Var2Json(F("GPS_lat"),						"000");//MeasGPS);
-						data += Var2Json(F("GPS_lon"),						"000");//MeasGPS);
+						data += Var2Json(F("GPS_lat"),						StrSplitItem(MeasGPS, ',', 1));
+						data += Var2Json(F("GPS_lon"),						StrSplitItem(MeasGPS, ',', 2));
 
 						data += Var2Json(F("BME280_pressure"),				StrSplitItem(MeasBME, ',', 3));
 						data += Var2Json(F("BME280_temperature"), 			StrSplitItem(MeasBME, ',', 1));
@@ -624,16 +616,16 @@ void loop()
 						data += Var2Json(F("SDS_P1"),						StrSplitItem(MeasSDS, ',', 1)); // PM10.0
 						data += Var2Json(F("SDS_P2"),						StrSplitItem(MeasSDS, ',', 2)); // PM 2.5
 
-						data += Var2Json(F("PMS_P1"),						StrSplitItem(MeasGPS, ',', 1)); // PM10.0
-						data += Var2Json(F("PMS_P2"),						StrSplitItem(MeasGPS, ',', 2)); // PM 2.5
-						data += Var2Json(F("PMS_P3"),						StrSplitItem(MeasGPS, ',', 3)); // PM 1.0
+						data += Var2Json(F("PMS_P1"),						StrSplitItem(MeasPMS, ',', 1)); // PM10.0
+						data += Var2Json(F("PMS_P2"),						StrSplitItem(MeasPMS, ',', 2)); // PM 2.5
+						data += Var2Json(F("PMS_P3"),						StrSplitItem(MeasPMS, ',', 3)); // PM 1.0
 
 						data += "]}";
 
 						// prepare fo gscript
 
 						data.remove(0, 1);
-						data = "{\"espid\": \"" + esp_chipid + "\", \"count_sends\": \"" + "DB" + "\"," + data + "}";
+						data = "{\"espid\": \"" + esp_chipid + "\"," + data + "}";
 						data.replace("\"sensordatavalues\":[", "\"sensordatavalues\":{");
 						data.replace("}","");
 						data.replace("]","");
@@ -653,8 +645,6 @@ void loop()
 
 		vTaskDelay(50);  // one tick delay (1ms) in between reads for stability
 
-		Serial.printf("ESP: 101 free heap: %u\n", ESP.getFreeHeap());
-
 
 		if(data.length()){
 
@@ -663,8 +653,6 @@ void loop()
 			client = new HTTPSRedirect(httpsPort);
 			client->setPrintResponseBody(false);
 			client->setContentTypeHeader("application/json");
-
-			Serial.printf("ESP: 102 free heap: %u\n", ESP.getFreeHeap());
 
 			vTaskDelay(50);  // one tick delay (1ms) in between reads for stability
 			debug_out(F("WWW: Client object created"), 											DEBUG_MED_INFO, 1);
@@ -702,21 +690,16 @@ void loop()
 
 				if(client->POST(url2, host, payload)){
 					debug_out(F("Spreadsheet updated"), DEBUG_MIN_INFO, 1);
-					//savedone	=	 true;
-
+					savedone	=	 true;
 				}
 				else{
 					debug_out(F("Spreadsheet update fails: "), DEBUG_MIN_INFO, 1);
 				}
 			}
 
-
 			// delete HTTPSRedirect object
 			delete client;
 			client = nullptr;
-
-			Serial.printf("ESP: 03 Min level of free heap: %u\n", ESP.getMinFreeHeap());
-
 
 			debug_out(F("WWW: Client object deleted"), 											DEBUG_MED_INFO, 1);
 
@@ -725,11 +708,10 @@ void loop()
 				// Data sent successfully. Remove record from DB
 				if (!db_open(DB_PATH, &db)){
 
-
 					sql = "UPDATE timestamps SET sendGS = 1 WHERE Id='" + RowID + "';";
 					GetDB_Data(sql.c_str(), TEMP1	, TEMP2);							// Mark record as sended
 
-					debug_out(F("Spreadsheet updated sucesfully. Data row marked"), 			DEBUG_MIN_INFO, 1);
+					debug_out(F("Spreadsheet updated successfully. Data row marked"), 			DEBUG_MIN_INFO, 1);
 
 
 				}
@@ -928,7 +910,7 @@ void TaskArchiveMeas(void *pvParameters)  // This is a task.
 			  Store2DB();						// no reason to store values without timestamp
 		  }
 		  else{
-			  debug_out(F("Time was not set. No DB push"), DEBUG_MIN_INFO, 1);
+			  debug_out(F("Time was not set. No DB push"), 					DEBUG_WARNING, 1);
 		  }
 	  }
 
@@ -960,12 +942,12 @@ void TaskDisplay(void *pvParameters)  // This is a task.
 		if( ulNotificationValue == 1 )
 		{
 			/* The transmission ended as expected. */
-			debug_out(F("DISPLAY: refresh by Notification"), 	DEBUG_WARNING, 1);
+			debug_out(F("DISPLAY: refresh by Notification"), 				DEBUG_WARNING, 1);
 		}
 		else
 		{
 			/* The call to ulTaskNotifyTake() timed out. */
-			debug_out(F("DISPLAY: refresh by timeout"), 		DEBUG_MAX_INFO, 1);
+			debug_out(F("DISPLAY: refresh by timeout"), 					DEBUG_MAX_INFO, 1);
 		}
 
 		vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
@@ -993,12 +975,12 @@ void TaskWiFi(void *pvParameters)  // This is a task.
 
 			if (!WiFi.isConnected()) {
 
-				debug_out(F("WiFi in cycle unable to reconnect"), 		DEBUG_ERROR, 1);
+				debug_out(F("WiFi in cycle unable to reconnect"), 			DEBUG_ERROR, 1);
 			}
 	    }
 		else {
-			debug_out(F("WiFi connected at IP address: "), 				DEBUG_MED_INFO, 0);
-			debug_out(WiFi.localIP().toString(), 						DEBUG_MED_INFO, 1);
+			debug_out(F("WiFi connected at IP address: "), 					DEBUG_MED_INFO, 0);
+			debug_out(WiFi.localIP().toString(), 							DEBUG_MED_INFO, 1);
 
 			//init and get the time
 			configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
@@ -1537,9 +1519,9 @@ void Store2DB(){
 			if(!GetDB_Count(query.c_str(), RID)){
 
 				query  = "INSERT INTO measBME (Id, temp, press, humid) VALUES ('" + String((int)RID) + "',";
-				query += Float2String(BMEmeasT.ArchMeas.avg[0]) + ",";
-				query += Float2String(BMEmeasP.ArchMeas.avg[0]) + ",";
-				query += Float2String(BMEmeasH.ArchMeas.avg[0]) + ")";
+				query += "'" + Float2String(BMEmeasT.ArchMeas.avg[0]) +" (" + Float2String(BMEmeasT.ArchMeas.min[0]) + ":" + Float2String(BMEmeasT.ArchMeas.max[0]) + ")',";
+				query += "'" + Float2String(BMEmeasP.ArchMeas.avg[0]) +" (" + Float2String(BMEmeasP.ArchMeas.min[0]) + ":" + Float2String(BMEmeasP.ArchMeas.max[0]) + ")',";
+				query += "'" + Float2String(BMEmeasH.ArchMeas.avg[0]) +" (" + Float2String(BMEmeasH.ArchMeas.min[0]) + ":" + Float2String(BMEmeasH.ArchMeas.max[0]) + ")')";
 
 				rc = db_exec(db, query.c_str());
 				if (rc != SQLITE_OK) {
@@ -1547,8 +1529,8 @@ void Store2DB(){
 				}
 
 				query  = "INSERT INTO measSDS (Id, PM025, PM100) VALUES ('" + String((int)RID) + "',";
-				query += Float2String(SDSmeasPM025.ArchMeas.avg[0]) + ",";
-				query += Float2String(SDSmeasPM100.ArchMeas.avg[0]) + ")";
+				query += "'" + Float2String(SDSmeasPM025.ArchMeas.avg[0]) +" (" + Float2String(SDSmeasPM025.ArchMeas.min[0]) + ":" + Float2String(SDSmeasPM025.ArchMeas.max[0]) + ")',";
+				query += "'" + Float2String(SDSmeasPM100.ArchMeas.avg[0]) +" (" + Float2String(SDSmeasPM100.ArchMeas.min[0]) + ":" + Float2String(SDSmeasPM100.ArchMeas.max[0]) + ")')";
 
 				rc = db_exec(db, query.c_str());
 				if (rc != SQLITE_OK) {
@@ -1556,9 +1538,9 @@ void Store2DB(){
 				}
 
 				query  = "INSERT INTO measPMS (Id, PM010, PM025, PM100) VALUES ('" + String((int)RID) + "',";
-				query += Float2String(PMSmeasPM010.ArchMeas.avg[0]) + ",";
-				query += Float2String(PMSmeasPM025.ArchMeas.avg[0]) + ",";
-				query += Float2String(PMSmeasPM100.ArchMeas.avg[0]) + ")";
+				query += "'" + Float2String(PMSmeasPM010.ArchMeas.avg[0]) +" (" + Float2String(PMSmeasPM010.ArchMeas.min[0]) + ":" + Float2String(PMSmeasPM010.ArchMeas.max[0]) + ")',";
+				query += "'" + Float2String(PMSmeasPM025.ArchMeas.avg[0]) +" (" + Float2String(PMSmeasPM025.ArchMeas.min[0]) + ":" + Float2String(PMSmeasPM025.ArchMeas.max[0]) + ")',";
+				query += "'" + Float2String(PMSmeasPM100.ArchMeas.avg[0]) +" (" + Float2String(PMSmeasPM100.ArchMeas.min[0]) + ":" + Float2String(PMSmeasPM100.ArchMeas.max[0]) + ")')";
 
 				rc = db_exec(db, query.c_str());
 				if (rc != SQLITE_OK) {
