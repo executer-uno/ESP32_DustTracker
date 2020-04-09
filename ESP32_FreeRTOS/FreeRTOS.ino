@@ -86,7 +86,7 @@
 		 test or else use the SPIFFS plugin to create a partition
 		 https://github.com/me-no-dev/arduino-esp32fs-plugin */
 	#define FORMAT_SPIFFS_IF_FAILED true
-	#define DB_PATH "/sd/DB_portable03.db"
+	#define DB_PATH "/sd/DB_portable04.db"
 
 	sqlite3 	*db;
 	int 		rc;
@@ -410,7 +410,10 @@ void setup() {
 
 				if(!GetDB_Count( sql , rec_count64)){
 					rec_count = rec_count64;
-					debug_out("Count not stored records = " + String(rec_count),		DEBUG_MED_INFO, 1);
+					debug_out("Count records waiting = " + String(rec_count),				DEBUG_ALWAYS, 1);
+				}
+				else{
+					debug_out("Error getting records count",								DEBUG_ERROR, 1);
 				}
 
 				sqlite3_close(db);
@@ -1446,46 +1449,44 @@ bool initGPS() {
 
 #ifdef CFG_SQL
 	const char* data = "Callback function called";
+	char *zErrMsg = 0;
+
 	static int callback(void *data, int argc, char **argv, char **azColName) {
 		 int i;
-		 debug_out(String((const char*)data), 					DEBUG_MED_INFO, 0);
-		 debug_out(F(": "), 									DEBUG_MED_INFO, 0);
+		 debug_out(String((const char*)data), 					DEBUG_MIN_INFO, 0);
+		 debug_out(F(": "), 									DEBUG_MIN_INFO, 0);
 		 for (i = 0; i<argc; i++){
-				 debug_out(String(azColName[i]), 				DEBUG_MED_INFO, 0);
-				 debug_out(F(" = "), 							DEBUG_MED_INFO, 0);
-				 debug_out(String(argv[i] ? argv[i] : "NULL"), 	DEBUG_MED_INFO, 1);
+				 debug_out(String(azColName[i]), 				DEBUG_MIN_INFO, 0);
+				 debug_out(F(" = "), 							DEBUG_MIN_INFO, 0);
+				 debug_out(String(argv[i] ? argv[i] : "NULL"), 	DEBUG_MIN_INFO, 1);
 		 }
-		 debug_out(F(""), 										DEBUG_MED_INFO, 1);
+		 debug_out(F(""), 										DEBUG_MIN_INFO, 1);
 		 return 0;
 	}
 
 	int db_open(const char *filename, sqlite3 **db) {
 		 int rc = sqlite3_open(filename, db);
 		 if (rc) {
-				 debug_out(F("Can't open database: "), 			DEBUG_MED_INFO, 0);
-				 debug_out(String(sqlite3_errmsg(*db)), 		DEBUG_MED_INFO, 1);
+				 debug_out(F("Can't open database: "), 			DEBUG_ERROR, 0);
+				 debug_out(String(sqlite3_errmsg(*db)), 		DEBUG_ERROR, 1);
 				 return rc;
 		 } else {
-				 debug_out(F("Opened database successfully"), 	DEBUG_MED_INFO, 1);
+				 debug_out(F("Opened database successfully"), 	DEBUG_MIN_INFO, 1);
 		 }
 		 return rc;
 	}
 
-	char *zErrMsg = 0;
 	int db_exec(sqlite3 *db, const char *sql) {
-		 debug_out("db_exec: " + String(sql), 					DEBUG_MED_INFO, 1);
+		 debug_out("db_exec: " + String(sql), 					DEBUG_MIN_INFO, 1);
 
-		 long start = micros();
 		 int rc = sqlite3_exec(db, sql, callback, (void*)data, &zErrMsg);
 		 if (rc != SQLITE_OK) {
-				 debug_out(F("SQL error: "), 					DEBUG_MED_INFO, 0);
-				 debug_out(String(zErrMsg), 					DEBUG_MED_INFO, 1);
+				 debug_out(F("SQL error: "), 					DEBUG_ERROR, 0);
+				 debug_out(String(zErrMsg), 					DEBUG_ERROR, 1);
 				 sqlite3_free(zErrMsg);
 		 } else {
-				 debug_out(F("Operation done successfully"), 	DEBUG_MED_INFO, 1);
+				 debug_out(F("Operation done successfully"), 	DEBUG_MIN_INFO, 1);
 		 }
-		 debug_out(F("Time taken:"), 							DEBUG_MED_INFO, 0);
-		 debug_out(String(micros()-start), 						DEBUG_MED_INFO, 1);
 
 		 return rc;
 	}
