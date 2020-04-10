@@ -31,7 +31,7 @@
 // Script examples
 // https://developers.google.com/adwords/scripts/docs/examples/spreadsheetapp
                                   
-var SS = SpreadsheetApp.openById('*********************************************'); // ESP32 PM25 googlespreadsheet
+var SS = SpreadsheetApp.openById('10dDaY8P9H8eZ70o71U0sG--0Qwxt1kwS-rwmP9N1VQs'); // ESP32 PM25 googlespreadsheet
 var sheetAct = SS.getSheetByName('Actual');
 var raw      = SS.getSheetByName('RAW'); 
 var str = "";
@@ -83,7 +83,9 @@ function doPost(e) {
         
         var tmp = SS.getSheetByName(parsedData.sheet_name);
                  
-        var now = Utilities.formatDate(new Date(), "Europe/Kiev", "yyyy-MM-dd hh:mm:ss a");
+        var now = Utilities.formatDate(new Date(), "Europe/Kiev", "yyyy-MM-dd HH:mm:ss");
+        
+        var values = [[{}]];
         
         // Update actual data on sheetAct
         sheetAct.getRange('Timestamp').setValue(now);
@@ -98,23 +100,33 @@ function doPost(e) {
           
         //Receieved timestamp
         // https://stackoverflow.com/questions/45227380/convert-unix-epoch-time-to-date-in-google-sheets/45231836
-        tmp.getRange(5, 2).setValue(Utilities.formatDate(new Date(parsedData.values.sensordatavalues.datetime * 1000), "Europe/Kiev", "yyyy-MM-dd hh:mm:ss a"));
+        tmp.getRange(5, 2).setValue(Utilities.formatDate(new Date(parsedData.values.sensordatavalues.datetime * 1000), "Europe/Kiev", "yyyy-MM-dd HH:mm:ss"));
 
         //PMS3007
-        tmp.getRange(5, 5).setValue(parsedData.values.sensordatavalues.PMS_P1);
-        tmp.getRange(5, 4).setValue(parsedData.values.sensordatavalues.PMS_P2);
-        tmp.getRange(5, 3).setValue(parsedData.values.sensordatavalues.PMS_P3);
-
+        values[0] = parsedData.values.sensordatavalues.PMS_P1.split(":");
+        tmp.getRange("C5:E5").setValues(values);
+        values[0] = parsedData.values.sensordatavalues.PMS_P2.split(":");
+        tmp.getRange("F5:H5").setValues(values);        
+        values[0] = parsedData.values.sensordatavalues.PMS_P3.split(":");
+        tmp.getRange("I5:K5").setValues(values);        
+        
         //SDS011
-        tmp.getRange(5, 7).setValue(parsedData.values.sensordatavalues.SDS_P1);
-        tmp.getRange(5, 6).setValue(parsedData.values.sensordatavalues.SDS_P2);
+        values[0] = parsedData.values.sensordatavalues.SDS_P1.split(":");
+        tmp.getRange("L5:N5").setValues(values);
+        values[0] = parsedData.values.sensordatavalues.SDS_P1.split(":");
+        tmp.getRange("O5:Q5").setValues(values); 
+
         //BME
-        tmp.getRange(5, 8).setValue(parsedData.values.sensordatavalues.BME280_pressure);
-        tmp.getRange(5, 9).setValue(parsedData.values.sensordatavalues.BME280_temperature);
-        tmp.getRange(5,10).setValue(parsedData.values.sensordatavalues.BME280_humidity);
+        values[0] = parsedData.values.sensordatavalues.BME280_pressure.split(":");
+        tmp.getRange("R5:T5").setValues(values);
+        values[0] = parsedData.values.sensordatavalues.BME280_temperature.split(":");
+        tmp.getRange("U5:W5").setValues(values);        
+        values[0] = parsedData.values.sensordatavalues.BME280_humidity.split(":");
+        tmp.getRange("X5:Z5").setValues(values);         
+        
         //GPS
-        tmp.getRange(5,11).setValue(parsedData.values.sensordatavalues.GPS_lat);
-        tmp.getRange(5,12).setValue(parsedData.values.sensordatavalues.GPS_lon);
+        tmp.getRange("AA5").setValue(parsedData.values.sensordatavalues.GPS_lat);
+        tmp.getRange("AB5").setValue(parsedData.values.sensordatavalues.GPS_lon);
         
         sheetAct.getRange('Act_PM025_Avg' ).setValue(parsedData.values.sensordatavalues.PMS_P1);
         sheetAct.getRange('Act_PM100_Avg' ).setValue(parsedData.values.sensordatavalues.PMS_P2);

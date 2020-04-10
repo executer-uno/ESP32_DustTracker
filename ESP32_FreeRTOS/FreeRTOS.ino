@@ -1522,9 +1522,9 @@ void Store2DB(){
 			if(!GetDB_Count(query.c_str(), RID)){
 
 				query  = "INSERT INTO measBME (Id, temp, press, humid) VALUES ('" + String((int)RID) + "',";
-				query += "'" + Float2String(BMEmeasT.ArchMeas.avg[0]) +" (" + Float2String(BMEmeasT.ArchMeas.min[0]) + ":" + Float2String(BMEmeasT.ArchMeas.max[0]) + ")',";
-				query += "'" + Float2String(BMEmeasP.ArchMeas.avg[0]) +" (" + Float2String(BMEmeasP.ArchMeas.min[0]) + ":" + Float2String(BMEmeasP.ArchMeas.max[0]) + ")',";
-				query += "'" + Float2String(BMEmeasH.ArchMeas.avg[0]) +" (" + Float2String(BMEmeasH.ArchMeas.min[0]) + ":" + Float2String(BMEmeasH.ArchMeas.max[0]) + ")')";
+				query += "'" + Float2String(BMEmeasT.ArchMeas.min[0]) 		+":" + Float2String(BMEmeasT.ArchMeas.avg[0]) 		+ ":" + Float2String(BMEmeasT.ArchMeas.max[0]) + "',";
+				query += "'" + Float2String(BMEmeasP.ArchMeas.min[0]) 		+":" + Float2String(BMEmeasP.ArchMeas.avg[0]) 		+ ":" + Float2String(BMEmeasP.ArchMeas.max[0]) + "',";
+				query += "'" + Float2String(BMEmeasH.ArchMeas.min[0]) 		+":" + Float2String(BMEmeasH.ArchMeas.avg[0]) 		+ ":" + Float2String(BMEmeasH.ArchMeas.max[0]) + "')";
 
 				rc = db_exec(db, query.c_str());
 				if (rc != SQLITE_OK) {
@@ -1532,8 +1532,8 @@ void Store2DB(){
 				}
 
 				query  = "INSERT INTO measSDS (Id, PM025, PM100) VALUES ('" + String((int)RID) + "',";
-				query += "'" + Float2String(SDSmeasPM025.ArchMeas.avg[0]) +" (" + Float2String(SDSmeasPM025.ArchMeas.min[0]) + ":" + Float2String(SDSmeasPM025.ArchMeas.max[0]) + ")',";
-				query += "'" + Float2String(SDSmeasPM100.ArchMeas.avg[0]) +" (" + Float2String(SDSmeasPM100.ArchMeas.min[0]) + ":" + Float2String(SDSmeasPM100.ArchMeas.max[0]) + ")')";
+				query += "'" + Float2String(SDSmeasPM025.ArchMeas.min[0]) 	+":" + Float2String(SDSmeasPM025.ArchMeas.avg[0]) 	+ ":" + Float2String(SDSmeasPM025.ArchMeas.max[0]) + "',";
+				query += "'" + Float2String(SDSmeasPM100.ArchMeas.min[0]) 	+":" + Float2String(SDSmeasPM100.ArchMeas.avg[0]) 	+ ":" + Float2String(SDSmeasPM100.ArchMeas.max[0]) + "')";
 
 				rc = db_exec(db, query.c_str());
 				if (rc != SQLITE_OK) {
@@ -1541,9 +1541,9 @@ void Store2DB(){
 				}
 
 				query  = "INSERT INTO measPMS (Id, PM010, PM025, PM100) VALUES ('" + String((int)RID) + "',";
-				query += "'" + Float2String(PMSmeasPM010.ArchMeas.avg[0]) +" (" + Float2String(PMSmeasPM010.ArchMeas.min[0]) + ":" + Float2String(PMSmeasPM010.ArchMeas.max[0]) + ")',";
-				query += "'" + Float2String(PMSmeasPM025.ArchMeas.avg[0]) +" (" + Float2String(PMSmeasPM025.ArchMeas.min[0]) + ":" + Float2String(PMSmeasPM025.ArchMeas.max[0]) + ")',";
-				query += "'" + Float2String(PMSmeasPM100.ArchMeas.avg[0]) +" (" + Float2String(PMSmeasPM100.ArchMeas.min[0]) + ":" + Float2String(PMSmeasPM100.ArchMeas.max[0]) + ")')";
+				query += "'" + Float2String(PMSmeasPM010.ArchMeas.min[0]) 	+":" + Float2String(PMSmeasPM010.ArchMeas.avg[0]) 	+ ":" + Float2String(PMSmeasPM010.ArchMeas.max[0]) + "',";
+				query += "'" + Float2String(PMSmeasPM025.ArchMeas.min[0]) 	+":" + Float2String(PMSmeasPM025.ArchMeas.avg[0]) 	+ ":" + Float2String(PMSmeasPM025.ArchMeas.max[0]) + "',";
+				query += "'" + Float2String(PMSmeasPM100.ArchMeas.min[0]) 	+":" + Float2String(PMSmeasPM100.ArchMeas.avg[0]) 	+ ":" + Float2String(PMSmeasPM100.ArchMeas.max[0]) + "')";
 
 				rc = db_exec(db, query.c_str());
 				if (rc != SQLITE_OK) {
@@ -1587,15 +1587,43 @@ void ClearDB(){
 		String query = "";
 
 		query   = "DELETE FROM measBME;";
-		query  += "DELETE FROM measSDS;";
-		query  += "DELETE FROM measPMS;";
-		query  += "DELETE FROM measGPS;";
-		query  += "DELETE FROM timestamps;";
-
 		rc = db_exec(db, query.c_str());
 		if (rc != SQLITE_OK) {
-			debug_out(F("ClearDB: not updated"),			DEBUG_ERROR, 1);
+			debug_out(F("ClearDB: measBME not updated"),			DEBUG_ERROR, 1);
 		}
+		vTaskDelay(50);  // one tick delay (1ms) in between reads for stability
+
+
+		query  += "DELETE FROM measSDS;";
+		rc = db_exec(db, query.c_str());
+		if (rc != SQLITE_OK) {
+			debug_out(F("ClearDB: measSDS not updated"),			DEBUG_ERROR, 1);
+		}
+		vTaskDelay(50);  // one tick delay (1ms) in between reads for stability
+
+
+		query  += "DELETE FROM measPMS;";
+		rc = db_exec(db, query.c_str());
+		if (rc != SQLITE_OK) {
+			debug_out(F("ClearDB: measPMS not updated"),			DEBUG_ERROR, 1);
+		}
+		vTaskDelay(50);  // one tick delay (1ms) in between reads for stability
+
+
+		query  += "DELETE FROM measGPS;";
+		rc = db_exec(db, query.c_str());
+		if (rc != SQLITE_OK) {
+			debug_out(F("ClearDB: measGPS not updated"),			DEBUG_ERROR, 1);
+		}
+		vTaskDelay(50);  // one tick delay (1ms) in between reads for stability
+
+
+		query  += "DELETE FROM timestamps;";
+		rc = db_exec(db, query.c_str());
+		if (rc != SQLITE_OK) {
+			debug_out(F("ClearDB: timestamps not updated"),			DEBUG_ERROR, 1);
+		}
+		vTaskDelay(50);  // one tick delay (1ms) in between reads for stability
 
 		rec_count = 0;
 
@@ -1604,6 +1632,9 @@ void ClearDB(){
 	else{
 		debug_out(F("ClearDB: DB opening error."),				DEBUG_ERROR, 1);
 	}
+	vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
+
+	ESP.restart();
 }
 
 #endif
