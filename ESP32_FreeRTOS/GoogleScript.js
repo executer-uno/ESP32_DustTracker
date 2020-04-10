@@ -113,7 +113,7 @@ function doPost(e) {
         //SDS011
         values[0] = parsedData.values.sensordatavalues.SDS_P1.split(":");
         tmp.getRange("L5:N5").setValues(values);
-        values[0] = parsedData.values.sensordatavalues.SDS_P1.split(":");
+        values[0] = parsedData.values.sensordatavalues.SDS_P2.split(":");
         tmp.getRange("O5:Q5").setValues(values); 
 
         //BME
