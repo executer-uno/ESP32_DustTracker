@@ -10,6 +10,7 @@
 
 #include "Definitions.h"
 //#include "BluetoothSerial.h" //Header File for Serial Bluetooth, will be added by default into Arduino
+#include "SoftwareSerial.h"
 
 
 namespace cfg {
@@ -18,9 +19,8 @@ namespace cfg {
 	extern char wlanpwd[65];
 }
 
-extern HardwareSerial		Serial;
+extern SoftwareSerial		Serial;
 extern SemaphoreHandle_t 	Serial_mutex;
-
 
 void PMmeas::NewMeas(float Measure){
 
@@ -37,9 +37,11 @@ void PMmeas::NewMeas(float Measure){
 	xSemaphoreGive(meas_mutex);
 
 }
+
 void PMmeas::CRCError(){
 	this->CRCerr++;
 }
+
 void PMmeas::ArchPush(){
 
 	if(this->count > 0){
@@ -105,6 +107,7 @@ PMmeas::PMmeas(){
 
 	meas_mutex = xSemaphoreCreateMutex();
 }
+
 String PMmeas::DebugAvg(){
 	String strDebug = "";
 	if(this->count > 0){
@@ -132,7 +135,6 @@ String PMmeas::DebugCRC(){
 	}
 	return strDebug;
 }
-
 
 /*****************************************************************
  * convert float to string with a      							 *
@@ -177,8 +179,6 @@ void debug_out(const String& text, const int level, const bool linebreak) {
 	}
 }
 
-
-
 /*****************************************************************
  * check display values, return '-' if undefined								 *
  *****************************************************************/
@@ -186,8 +186,6 @@ String check_display_value(double value, double undef, uint8_t digits, uint8_t s
 	String s = (value != undef ? Float2String(value, digits, str_len) : "-");
 	return s;
 }
-
-
 
 /*****************************************************************
  * convert value to json string																	*
@@ -241,54 +239,58 @@ String Var2Json(const String& name, const double value) {
 	return s;
 }
 
-
-
-
-void printLocalTime()
+String printLocalTime(const char* format)
 {
   struct tm timeinfo;
   if(!getLocalTime(&timeinfo)){
-	  debug_out(F("Failed to obtain time"), 			DEBUG_ERROR, 1);
-    return;
+	  debug_out(F("printLocalTime: Failed to obtain time"), 			DEBUG_ERROR, 1);
+	  return "- - -";
   }
-  Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
+  char timeStringBuff[50]; //50 chars should be enough
+  strftime(timeStringBuff, sizeof(timeStringBuff), format, &timeinfo);
+
+  //Optional: Construct String object
+  String asString(timeStringBuff);
+
+  debug_out(F("printLocalTime: "), 										DEBUG_MED_INFO, 0);
+  debug_out(asString, 													DEBUG_MED_INFO, 1);
+
+  return asString;
+
+
+
+
 }
 
-//
-//
-//// Network connection
-//
-////connectWifi();
-//		  //connect to WiFi
-//
-//	debug_out("Connecting to " + String(cfg::wlanssid),		DEBUG_ALWAYS, 1);
-//
-//
-//		  WiFi.begin(cfg::wlanssid, cfg::wlanpwd); // Start WiFI
-//
-//			int retryCount = 0;
-//			while ((WiFi.status() != WL_CONNECTED) && (retryCount <	20)) {
-//				delay(500);  									// one tick delay (1ms) in between reads for stability
-//				debug_out(".", 									DEBUG_ALWAYS, 0);
-//				++retryCount;
-//			}
-//
-//			if (WiFi.status() != WL_CONNECTED) {
-//				debug_out(F("WiFi not connected"), 				DEBUG_ALWAYS, 1);
-//			}
-//			else {
-//				debug_out(F("WiFi connected\nIP address: "), 	DEBUG_ALWAYS, 0);
-//				debug_out(WiFi.localIP().toString(), 			DEBUG_ALWAYS, 1);
-//
-//				//init and get the time
-//				configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-//
-//			}
-//
-//
-//		  printLocalTime();
-//
+int setUnixtime(time_t unixtime) {
+  timeval epoch = {unixtime, 0};
+  return settimeofday((const timeval*)&epoch, 0);
+}
 
 
+void setTimeZone(long offset, int daylight)
+{
+    char cst[17] = {0};
+    char cdt[17] = "DST";
+    char tz[33] = {0};
 
+    if(offset % 3600){
+        sprintf(cst, "UTC%ld:%02lu:%02lu", offset / 3600, abs((offset % 3600) / 60), abs(offset % 60));
+    } else {
+        sprintf(cst, "UTC%ld", offset / 3600);
+    }
+    if(daylight != 3600){
+        long tz_dst = offset - daylight;
+        if(tz_dst % 3600){
+            sprintf(cdt, "DST%ld:%02lu:%02lu", tz_dst / 3600, abs((tz_dst % 3600) / 60), abs(tz_dst % 60));
+        } else {
+            sprintf(cdt, "DST%ld", tz_dst / 3600);
+        }
+    }
+    sprintf(tz, "%s%s", cst, cdt);
+    setenv("TZ", tz, 1);
+    tzset();
 
+	debug_out("setTimeZone: " + String(tz),										DEBUG_MAX_INFO, 1);
+
+}

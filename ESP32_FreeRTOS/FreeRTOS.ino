@@ -9,13 +9,14 @@
 	// Config functionality
 	#define CFG_BME280
 	#define CFG_LCD
-	//#define CFG_GPS
+	#define CFG_GPS
 	#define CFG_SQL
 	#define CFG_GSHEET
 
 #include <Arduino.h>
 #ifdef CFG_GPS
-	#include "BluetoothSerial.h" //Header File for Serial Bluetooth, will be added by default into Arduino
+	//#include "BluetoothSerial.h" //Header File for Serial Bluetooth, will be added by default into Arduino
+	#include "SoftwareSerial.h"
 #endif
 #include "html-content.h"
 
@@ -112,8 +113,8 @@ HardwareSerial 	serialSDS(1);
 HardwareSerial 	serialPMS(2);
 
 #ifdef CFG_GPS
-	BluetoothSerial Serial; 		//Object for Bluetooth
-	HardwareSerial 	serialGPS(2);
+	SoftwareSerial 	Serial; 		//Object for Bluetooth
+	HardwareSerial 	serialGPS(0);
 #else
 	HardwareSerial 	Serial(0);		// HW serial debug
 #endif
@@ -124,7 +125,8 @@ HardwareSerial 	serialPMS(2);
 	/*****************************************************************
 	 * Display definitions																					 *
 	 *****************************************************************/
-	SSD1306 display(0x3c, I2C_PIN_SDA, I2C_PIN_SCL); // OLED_ADDRESS
+	SSD1306 display(0x3c, I2C_PIN_SDA, I2C_PIN_SCL); // OLED_ADDRESS (128x64 pixels)
+
 #endif
 #ifdef CFG_BME280
 	/*****************************************************************
@@ -138,11 +140,9 @@ HardwareSerial 	serialPMS(2);
 	 *****************************************************************/
 	TinyGPSPlus gps;
 
-	double last_value_GPS_lat = -200.0;
-	double last_value_GPS_lon = -200.0;
-	double last_value_GPS_alt = -200.0;
-	String last_value_GPS_date = "";
-	String last_value_GPS_time = "";
+	double last_value_GPS_lat = GPS_UNDEF;
+	double last_value_GPS_lon = GPS_UNDEF;
+	double last_value_GPS_alt = GPS_UNDEF;
 
 #endif
 #ifdef CFG_GSHEET
@@ -151,7 +151,7 @@ HardwareSerial 	serialPMS(2);
 	String esp_chipid = "- - -";
 
 	const char* host = "script.google.com";
-	const int httpsPort = 443;
+	const int 	httpsPort = 443;
 	const char* fingerprint = "";
 
 
@@ -225,6 +225,7 @@ SemaphoreHandle_t Serial_mutex;	// Mutex to access to Serial RS232 interface
 SemaphoreHandle_t SQL_mutex;	// Mutex to access to SQLite database
 SemaphoreHandle_t WiFi_mutex;	// Mutex to access to SQLite database
 
+
 // the setup function runs once when you press reset or power the board
 void setup() {
 	I2C_mutex 		= xSemaphoreCreateMutex();
@@ -246,7 +247,11 @@ void setup() {
 
 	#ifdef CFG_GPS
 		serialGPS.begin(9600, SERIAL_8N1, GPS_SERIAL_RX, GPS_SERIAL_TX);			// for HW UART GPS
-		Serial.begin("ESP32_PMS_Station"); //Name of your Bluetooth Station
+
+		//Serial.begin("ESP32_PMS_Station"); //Name of your Bluetooth Station
+		Serial.begin(9600, SWSERIAL_8N1, DEB_RX, DEB_TX, false, 250, 50);
+		Serial.println("\nSoftware serial test started");
+
 	#else
 		Serial.begin(115200, SERIAL_8N1, DEB_RX, DEB_TX);			 				// for HW UART GPS
 	#endif
@@ -434,13 +439,14 @@ void setup() {
 
 	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
 
+	// Set time zone once, not in loop.
+    setTimeZone(gmtOffset_sec,daylightOffset_sec);
+
 	connectWifi();
 
 	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
 
-//  // Now set up two tasks to run independently.
-
-
+    // Now set up two tasks to run independently.
 	xTaskCreatePinnedToCore(
 		TaskReadSensors
 		,  "ReadSDSPMS"
@@ -593,7 +599,7 @@ void loop()
 						GetDB_Data(sql.c_str(), TEMP1	, MeasGPS);
 #endif
 
-						MeasGPS = "99.9,99.9,";
+						//MeasGPS = "99.9,99.9,";
 
 						debug_out(("WWW: From measSDS DB: ") + MeasSDS,											DEBUG_MED_INFO, 1);
 						debug_out(("WWW: From measPMS DB: ") + MeasPMS,											DEBUG_MED_INFO, 1);
@@ -911,6 +917,7 @@ void TaskArchiveMeas(void *pvParameters)  // This is a task.
 		  BMEmeasT.ArchPush();
 		  BMEmeasP.ArchPush();
 
+		  time(&now);
 		  if(now > 1577836800){					// check if time was set
 			  Store2DB();						// no reason to store values without timestamp
 		  }
@@ -1128,30 +1135,29 @@ void display_values() {
 	switch (screens[next_display_count % screen_count]) {
 
 	case (1):
-		display_header =  "  " + String(FPSTR(SENSORS_PMSx003)) + "  " + String(FPSTR(SENSORS_SDS011));
-		display_lines[0] = "PM  0.1:  "  + check_display_value(PMSmeasPM010.ArchMeas.avg[0], -1.0, 1, 6) + " µg/m³";
-		display_lines[1] = "PM  2.5:  "  + check_display_value(PMSmeasPM025.ArchMeas.avg[0], -1.0, 1, 6) + ";" + check_display_value(SDSmeasPM025.ArchMeas.avg[0], -1.0, 1, 6) + " µg/m³";
-		display_lines[2] = "PM 10.0:  "  + check_display_value(PMSmeasPM100.ArchMeas.avg[0], -1.0, 1, 6) + ";" + check_display_value(SDSmeasPM100.ArchMeas.avg[0], -1.0, 1, 6) + " µg/m³";
+		display_header =  F("PM (µg/m³)");
+		display_lines[0] = "PM  0.1:  "  + check_display_value(PMSmeasPM010.ArchMeas.avg[0], -1.0, 1, 6);
+		display_lines[1] = "PM  2.5:  "  + check_display_value(PMSmeasPM025.ArchMeas.avg[0], -1.0, 1, 6) + "  ;" + check_display_value(SDSmeasPM025.ArchMeas.avg[0], -1.0, 1, 6);
+		display_lines[2] = "PM 10.0:  "  + check_display_value(PMSmeasPM100.ArchMeas.avg[0], -1.0, 1, 6) + "  ;" + check_display_value(SDSmeasPM100.ArchMeas.avg[0], -1.0, 1, 6);
 		break;
 
 	case (3):
-		display_header = FPSTR(SENSORS_BME280);
+		display_header = F("Air");
 		display_lines[0] = "Temp.: " + check_display_value(BMEmeasT.ArchMeas.avg[0] , -1.0				, 1, 6) + " °C";
 		display_lines[1] = "Hum.:  " + check_display_value(BMEmeasH.ArchMeas.avg[0] , -1.0				, 1, 6) + " %";
 		display_lines[2] = "Pres.: " + check_display_value(BMEmeasP.ArchMeas.avg[0]  / 100, (-1 / 100.0), 1, 6) + " hPa";
 		break;
 	case (4):
-		display_header = F("GPS NEO6M");
+		display_header = F("GPS");
 #ifdef CFG_GPS
-		display_lines[0] = "Lat: " + check_display_value(last_value_GPS_lat , -200.0, 6, 10);
-		display_lines[1] = "Lon: " + check_display_value(last_value_GPS_lon , -200.0, 6, 10);
-		display_lines[2] = "Alt: " + check_display_value(last_value_GPS_alt , -200.0, 2, 10);
+		display_lines[0] = "Lat:  " + check_display_value(last_value_GPS_lat , GPS_UNDEF, 6, 10);
+		display_lines[1] = "Lon:  " + check_display_value(last_value_GPS_lon , GPS_UNDEF, 6, 10);
+		display_lines[2] = "Alt:  " + check_display_value(last_value_GPS_alt , GPS_UNDEF, 6, 10);
 #else
 		display_lines[0] = "Lat: ";
 		display_lines[1] = "Lon: ";
 		display_lines[2] = "Alt: ";
 #endif
-
 
 		break;
 	case (5):
@@ -1183,11 +1189,14 @@ void display_values() {
 	xSemaphoreTake(I2C_mutex, portMAX_DELAY);
 	display.clear();
 	display.displayOn();
-	display.setTextAlignment(TEXT_ALIGN_CENTER);
 
 	if(screens[next_display_count % screen_count] < 10){
-		display.drawString(64, 0, display_header);
 		display.setTextAlignment(TEXT_ALIGN_LEFT);
+
+		//display.drawString(60, 0, printLocalTime("%Y %m %d %H:%M:%S"));
+		display.drawString(100, 0, printLocalTime("%H:%M"));
+
+		display.drawString(0,  0, display_header);
 		display.drawString(0, 13, display_lines[0]);
 		display.drawString(0, 25, display_lines[1]);
 		display.drawString(0, 37, display_lines[2]);
@@ -1301,10 +1310,8 @@ void disable_unneeded_nmea() {
 /*****************************************************************
  * read GPS sensor values																				*
  *****************************************************************/
+
 void sensorGPS() {
-	String s = "";
-	String gps_lat = "";
-	String gps_lon = "";
 
 	debug_out(String(FPSTR(DBG_TXT_START_READING)) + "GPS", DEBUG_MED_INFO, 1);
 
@@ -1313,99 +1320,56 @@ void sensorGPS() {
 			if (gps.location.isValid()) {
 				last_value_GPS_lat = gps.location.lat();
 				last_value_GPS_lon = gps.location.lng();
-				gps_lat = Float2String(last_value_GPS_lat, 6);
-				gps_lon = Float2String(last_value_GPS_lon, 6);
 			} else {
-				last_value_GPS_lat = -200;
-				last_value_GPS_lon = -200;
+				last_value_GPS_lat = GPS_UNDEF;
+				last_value_GPS_lon = GPS_UNDEF;
 				debug_out(F("Lat/Lng INVALID"), DEBUG_MAX_INFO, 1);
 			}
 			if (gps.altitude.isValid()) {
 				last_value_GPS_alt = gps.altitude.meters();
 				String gps_alt = Float2String(last_value_GPS_alt, 2);
 			} else {
-				last_value_GPS_alt = -200;
+				last_value_GPS_alt = GPS_UNDEF;
 				debug_out(F("Altitude INVALID"), DEBUG_MAX_INFO, 1);
 			}
-			if (gps.date.isValid()) {
-				String gps_date = "";
-				if (gps.date.month() < 10) {
-					gps_date += "0";
-				}
-				gps_date += String(gps.date.month());
-				gps_date += "/";
-				if (gps.date.day() < 10) {
-					gps_date += "0";
-				}
-				gps_date += String(gps.date.day());
-				gps_date += "/";
-				gps_date += String(gps.date.year());
-				last_value_GPS_date = gps_date;
-			} else {
-				debug_out(F("Date INVALID"), DEBUG_MAX_INFO, 1);
-			}
-
-			// gps.time.hour() resets Updated flag!
-			if(gps.time.isUpdated()){
-				// Set time from GPS
-//			    time_t t_of_day;
-//			    struct tm t;
-//			    timeval epoch;
-//			    const timeval *tv = &epoch;
-//			    timezone utc = {0,TimeZone};
-//			    const timezone *tz = &utc;
-//
-//			    t.tm_year = gps.date.year()  - 1900;
-//			    t.tm_mon  = gps.date.month() - 1;   // Month, 0 - jan
-//			    t.tm_mday = gps.date.day();         // Day of the month
-//			    t.tm_hour = gps.time.hour() + GMT_OFF;
-//			    t.tm_min  = gps.time.minute();
-//			    t.tm_sec  = gps.time.second();
-//			    t_of_day  = mktime(&t);
-
-//			    epoch = {t_of_day, 0};
-
-//			    settimeofday(tv, tz);
-//				setenv("TZ", TZ_INFO, 1);
-//				tzset(); 							// Assign the local timezone from setenv
-
-//				debug_out(F("GPS Time setted"), DEBUG_MAX_INFO, 1);
-//				got_ntp = true;
-//				timeUpdate = millis() + 300000;
-
-//				time_str = printLocalTime();
-//				Serial.println("----------> Local Time = " + time_str);
-
-			}
-
-			if (gps.time.isValid()) {
-				String gps_time = "";
-				if (gps.time.hour() < 10) {
-					gps_time += "0";
-				}
-				gps_time += String(gps.time.hour());
-				gps_time += ":";
-				if (gps.time.minute() < 10) {
-					gps_time += "0";
-				}
-				gps_time += String(gps.time.minute());
-				gps_time += ":";
-				if (gps.time.second() < 10) {
-					gps_time += "0";
-				}
-				gps_time += String(gps.time.second());
-				gps_time += ".";
-				if (gps.time.centisecond() < 10) {
-					gps_time += "0";
-				}
-				gps_time += String(gps.time.centisecond());
-				last_value_GPS_time = gps_time;
-			} else {
-				debug_out(F("Time: INVALID"), DEBUG_MAX_INFO, 1);
-			}
-
 		}
 	}
+
+	// gps.time.hour() resets Updated flag!
+	if(gps.time.isUpdated() && gps.time.isValid()){
+
+		// Set time from GPS
+	    time_t t_of_day;
+	    struct tm t;
+
+	    timeval epoch;
+	    const timeval *tv = &epoch;
+
+	    timezone utc = {0, 0};// {gmtOffset_sec/60, daylightOffset_sec/60};
+	    const timezone *tz = &utc;
+
+	    t.tm_year = gps.date.year()  - 1900;
+	    t.tm_mon  = gps.date.month() - 1;   					// Month, 0 - jan
+	    t.tm_mday = gps.date.day();         					// Day of the month
+
+	    t.tm_hour = gps.time.hour() + gmtOffset_sec/3600; 		// somewhy not timezone utc nor setTimeZone works, always +0 hours
+
+	    t.tm_min  = gps.time.minute();
+	    t.tm_sec  = gps.time.second();
+
+		debug_out("GPS Time: " + String(gps.time.hour())+":" + String(gps.time.minute()),	DEBUG_MED_INFO, 1);
+
+	    t_of_day  = mktime(&t);
+
+	    epoch = {t_of_day, 0};
+
+	    settimeofday(tv, tz);
+
+		debug_out(F("GPS: GPS Time set"), 													DEBUG_MED_INFO, 1);
+
+	}
+
+
 
 	if ( gps.charsProcessed() < 10) {
 		debug_out(F("GPS : check wiring"), DEBUG_ERROR, 1);
@@ -1507,10 +1471,10 @@ void Store2DB(){
 		*/
 
 		String query = "";
-		time(&now);
-		String DateTime = String(now);//"2020.02.19 18:65:26.325";
 
-		query  = "INSERT INTO timestamps (datetime) VALUES ('" + DateTime + "')";
+		time(&now);
+
+		query  = "INSERT INTO timestamps (datetime) VALUES ('" + String(now) + "')";
 		rc = db_exec(db, query.c_str());
 		if (rc != SQLITE_OK) {
 			debug_out(F("Table 'timestamps' not updated"),			DEBUG_ERROR, 1);
@@ -1551,14 +1515,19 @@ void Store2DB(){
 				}
 
 #ifdef CFG_GPS
-				query  = "INSERT INTO measGPS (Id, lat, lon) VALUES ('" + String((int)RID) + "',";
-				query += Float2String(last_value_GPS_lat) + ",";
-				query += Float2String(last_value_GPS_lon) + ")";
 
-				rc = db_exec(db, query.c_str());
-				if (rc != SQLITE_OK) {
-					debug_out(F("Table 'measGPS' not updated"),			DEBUG_ERROR, 1);
+				if(last_value_GPS_lat != GPS_UNDEF){
+
+					query  = "INSERT INTO measGPS (Id, lat, lon) VALUES ('" + String((int)RID) + "',";
+					query += Float2String(last_value_GPS_lat) + ",";
+					query += Float2String(last_value_GPS_lon) + ")";
+
+					rc = db_exec(db, query.c_str());
+					if (rc != SQLITE_OK) {
+						debug_out(F("Table 'measGPS' not updated"),			DEBUG_ERROR, 1);
+					}
 				}
+
 #endif
 
 

@@ -75,6 +75,8 @@
 	#define I2C_PIN_SCL OLED_SCL
 	#define I2C_PIN_SDA OLED_SDA
 
+	#define	GPS_UNDEF -200.0
+
 	#define SOFTWARE_VERSION "PORT2XBMEGPS01"
 
 	enum class SensorSt {
@@ -143,6 +145,8 @@
 	String Var2Json(const String& name, const int value);
 	String Var2Json(const String& name, const double value);
 
-	void printLocalTime();
+	String printLocalTime(const char* format);
+	int setUnixtime(int32_t unixtime);
+	void setTimeZone(long offset, int daylight);
 
 #endif /* DEFINITIONS_H_ */
