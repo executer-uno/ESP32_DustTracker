@@ -25,14 +25,8 @@
 	// Wieviele Informationen sollenber die serielle Schnittstelle ausgegeben werden?
 	#define DEBUG DEBUG_MIN_INFO
 
-	// BasicAuth config
-	#define WWW_USERNAME "admin"
-	#define WWW_PASSWORD "feinstaub"
-	#define WWW_BASICAUTH_ENABLED 0
+	#define OSM_API_ENDPOINT "ingress.osem.vo1d.space"
 
-	// Sensor Wifi config (config mode)
-	#define FS_SSID "sensor_cfg"
-	#define FS_PWD  ""
 
 	// Initial configuration settings ***********
 	// GPS, bevorzugt Neo-6M
@@ -144,6 +138,7 @@
 	String Var2Json(const String& name, const bool value);
 	String Var2Json(const String& name, const int value);
 	String Var2Json(const String& name, const double value);
+	String ValueLocated2Json(const String& timestamp, const String& lat, const String& lng, const String& value);
 
 	String printLocalTime(const char* format);
 	int setUnixtime(int32_t unixtime);

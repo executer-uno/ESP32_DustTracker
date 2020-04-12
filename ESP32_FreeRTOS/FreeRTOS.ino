@@ -104,6 +104,7 @@
 #include "Credentials.h"
 #include "Sensors.h"
 #include <rom/rtc.h>
+#include "api.h"
 
 // ***************************** Variables *********************************
 
@@ -633,12 +634,28 @@ void loop()
 	String  TEMP2 			= "";
 
 	int64_t	rec_count64		= 0;
-	bool	savedone		= false;
+
 
 	xSemaphoreTake(SQL_mutex, portMAX_DELAY);
 	data	="";
 
 	if (WiFi.isConnected()) {
+
+		bool	GSsavedone		= false;
+		bool	OSsavedone		= false;
+
+		String BME280_P;
+		String BME280_T;
+		String BME280_H;
+
+		String SDS_100;
+		String SDS_025;
+
+		String PMS_100;
+		String PMS_025;
+		String PMS_010;
+
+
 		if (!db_open(DB_PATH, &db)){
 
 			// Check if anything in database to be sent?
@@ -695,25 +712,66 @@ void loop()
 						// GPS data
 						debug_out("WWW: Prepare JSON.",															DEBUG_MED_INFO, 1);
 
+						String GPS_lat 		= 	StrSplitItem(MeasGPS, ',', 1);
+						String GPS_lon 		= 	StrSplitItem(MeasGPS, ',', 2);
+
+						BME280_P			=	StrSplitItem(MeasBME, ',', 3);
+						BME280_T			=	StrSplitItem(MeasBME, ',', 1);
+						BME280_H			=	StrSplitItem(MeasBME, ',', 2);
+
+						SDS_100				=	StrSplitItem(MeasSDS, ',', 1);
+						SDS_025				=	StrSplitItem(MeasSDS, ',', 2);
+
+						PMS_100				=	StrSplitItem(MeasPMS, ',', 1);
+						PMS_025				=	StrSplitItem(MeasPMS, ',', 2);
+						PMS_010				=	StrSplitItem(MeasPMS, ',', 3);
+
+
 						data += Var2Json(F("datetime"),						DateTime);
-						data += Var2Json(F("GPS_lat"),						StrSplitItem(MeasGPS, ',', 1));
-						data += Var2Json(F("GPS_lon"),						StrSplitItem(MeasGPS, ',', 2));
+						data += Var2Json(F("GPS_lat"),						GPS_lat);
+						data += Var2Json(F("GPS_lon"),						GPS_lon);
 
-						data += Var2Json(F("BME280_pressure"),				StrSplitItem(MeasBME, ',', 3));
-						data += Var2Json(F("BME280_temperature"), 			StrSplitItem(MeasBME, ',', 1));
-						data += Var2Json(F("BME280_humidity"), 				StrSplitItem(MeasBME, ',', 2));
+						data += Var2Json(F("BME280_pressure"),				BME280_P);
+						data += Var2Json(F("BME280_temperature"), 			BME280_T);
+						data += Var2Json(F("BME280_humidity"), 				BME280_H);
 
-						data += Var2Json(F("SDS_P1"),						StrSplitItem(MeasSDS, ',', 1)); // PM10.0
-						data += Var2Json(F("SDS_P2"),						StrSplitItem(MeasSDS, ',', 2)); // PM 2.5
+						data += Var2Json(F("SDS_P1"),						SDS_100); // PM10.0
+						data += Var2Json(F("SDS_P2"),						SDS_025); // PM 2.5
 
-						data += Var2Json(F("PMS_P1"),						StrSplitItem(MeasPMS, ',', 1)); // PM10.0
-						data += Var2Json(F("PMS_P2"),						StrSplitItem(MeasPMS, ',', 2)); // PM 2.5
-						data += Var2Json(F("PMS_P3"),						StrSplitItem(MeasPMS, ',', 3)); // PM 1.0
+						data += Var2Json(F("PMS_P1"),						PMS_100); // PM10.0
+						data += Var2Json(F("PMS_P2"),						PMS_025); // PM 2.5
+						data += Var2Json(F("PMS_P3"),						PMS_010); // PM 1.0
 
 						data += "]}";
 
-						// prepare fo gscript
 
+						time_t TStamp = 1586722960;
+						//TStamp = DateTime.toInt();
+
+						struct tm timeinfo;
+						localtime_r(&TStamp, &timeinfo);
+				        if(timeinfo.tm_year > (2016 - 1900)){
+							char timeStringBuff[50]; //50 chars should be enough
+							strftime(timeStringBuff, sizeof(timeStringBuff), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);	//"%04d-%02d-%02dT%02d:%02d:%02dZ"
+
+							String TimeStamp(timeStringBuff);
+
+							GPS_lat = "47.81";	// anonimizer
+							GPS_lon = "35.10";	// anonimizer
+
+							SDS_100  = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, SDS_100);
+							SDS_025  = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, SDS_025);
+							PMS_100  = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, PMS_100);
+							PMS_025  = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, PMS_025);
+							PMS_010  = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, PMS_010);
+							BME280_P = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, SDS_100);
+							BME280_T = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, SDS_100);
+							BME280_H = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, SDS_100);
+
+				        }
+
+
+						// prepare fo gscript
 						data.remove(0, 1);
 						data = "{\"espid\": \"" + esp_chipid + "\"," + data + "}";
 						data.replace("\"sensordatavalues\":[", "\"sensordatavalues\":{");
@@ -782,7 +840,7 @@ void loop()
 
 				if(client->POST(url2, host, payload)){
 					debug_out(F("Spreadsheet updated"), DEBUG_MIN_INFO, 1);
-					savedone	=	 true;
+					GSsavedone	=	 true;
 				}
 				else{
 					debug_out(F("Spreadsheet update fails: "), DEBUG_MIN_INFO, 1);
@@ -795,16 +853,40 @@ void loop()
 
 			debug_out(F("WWW: Client object deleted"), 											DEBUG_MED_INFO, 1);
 
-			if(savedone){
+
+			// Send to opensensemap
+			OsemApi api = OsemApi();
+
+			OSsavedone = true;
+			OSsavedone &= api.postMeasurement(BME280_T, 	ID_SENSOR_TEMP);
+			OSsavedone &= api.postMeasurement(BME280_P, 	ID_SENSOR_PRESS);
+			OSsavedone &= api.postMeasurement(BME280_H, 	ID_SENSOR_HUMID);
+			OSsavedone &= api.postMeasurement(PMS_100, 		ID_SENSOR_PMS_100);
+			OSsavedone &= api.postMeasurement(PMS_025, 		ID_SENSOR_PMS_025);
+			OSsavedone &= api.postMeasurement(PMS_010, 		ID_SENSOR_PMS_010);
+			OSsavedone &= api.postMeasurement(SDS_100, 		ID_SENSOR_SDS_100);
+			OSsavedone &= api.postMeasurement(SDS_025, 		ID_SENSOR_SDS_025);
+
+			if(!OSsavedone){
+				debug_out(F("OSM: data push error"), 											DEBUG_ERROR, 1);
+			}
+
+
+			if(GSsavedone || OSsavedone){
 
 				// Data sent successfully. Remove record from DB
 				if (!db_open(DB_PATH, &db)){
 
-					sql = "UPDATE timestamps SET sendGS = 1 WHERE Id='" + RowID + "';";
-					GetDB_Data(sql.c_str(), TEMP1	, TEMP2);							// Mark record as sended
-
-					debug_out(F("Spreadsheet updated successfully. Data row marked"), 			DEBUG_MED_INFO, 1);
-
+					if(GSsavedone){
+						sql = "UPDATE timestamps SET sendGS = 1 WHERE Id='" + RowID + "';";
+						GetDB_Data(sql.c_str(), TEMP1	, TEMP2);							// Mark record as sended
+						debug_out(F("Spreadsheet updated successfully. Data row marked"), 			DEBUG_MED_INFO, 1);
+					}
+					if(OSsavedone){
+						sql = "UPDATE timestamps SET sendAD = 1 WHERE Id='" + RowID + "';";
+						GetDB_Data(sql.c_str(), TEMP1	, TEMP2);							// Mark record as sended
+						debug_out(F("Spreadsheet updated successfully. Data row marked"), 			DEBUG_MED_INFO, 1);
+					}
 
 				}
 				sqlite3_close(db);
