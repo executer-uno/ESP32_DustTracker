@@ -239,6 +239,8 @@ void setup() {
 	serialSDS.begin(9600, SERIAL_8N1, PM_SERIAL_RX,  PM_SERIAL_TX);			 		// for HW UART SDS
 	serialPMS.begin(9600, SERIAL_8N1, PM2_SERIAL_RX, PM2_SERIAL_TX);			 	// for HW UART PMS
 
+
+
 	char MAC_chars[15]; //Create a Unique AP from MAC address
 	uint64_t chipid= ESP.getEfuseMac();			//The chip ID is essentially its MAC address(length: 6 bytes).
 	uint16_t chiph = (uint16_t)(chipid>>32);	//High 	2 bytes
@@ -288,8 +290,8 @@ void setup() {
 	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
 
 	#ifdef CFG_GPS
-	// time to connect to bluetooth
-	String progress = "";
+	// time to start WiFi setup
+	String progress = " .";
 	for(int del=0; del<42; del++){
 
 		digitalWrite(LED_BUILTIN, HIGH);    // turn the LED ON by making the voltage HIGH
@@ -297,7 +299,7 @@ void setup() {
 		yield();
 		digitalWrite(LED_BUILTIN, LOW );
 		delay(100);
-		progress += ".";
+		progress += " .";
 
 		#ifdef CFG_LCD
 			display.drawString(0, 37, progress);
@@ -710,8 +712,8 @@ void loop()
 						payload = payload_base + data;
 
 
-						debug_out(F("WWW: Send from buffer to spreadsheet. Payload:"), 							DEBUG_MIN_INFO, 1);
-						debug_out(payload, 																		DEBUG_MIN_INFO, 1);
+						debug_out(F("WWW: Send from buffer to spreadsheet. Payload:"), 							DEBUG_MED_INFO, 1);
+						debug_out(payload, 																		DEBUG_MED_INFO, 1);
 
 					}
 				}
@@ -788,7 +790,7 @@ void loop()
 					sql = "UPDATE timestamps SET sendGS = 1 WHERE Id='" + RowID + "';";
 					GetDB_Data(sql.c_str(), TEMP1	, TEMP2);							// Mark record as sended
 
-					debug_out(F("Spreadsheet updated successfully. Data row marked"), 			DEBUG_MIN_INFO, 1);
+					debug_out(F("Spreadsheet updated successfully. Data row marked"), 			DEBUG_MED_INFO, 1);
 
 
 				}
@@ -808,7 +810,7 @@ void loop()
 #endif
 
 
-	vTaskDelay(10000);  // one tick delay (1ms) in between reads for stability
+	vTaskDelay(5000);  // one tick delay (1ms) in between reads for stability
 }
 
 
@@ -820,20 +822,20 @@ bool GetDB_Count(const char *sql, int64_t &count){
 	if (sqlite3_prepare_v2(db, sql, -1, &res, NULL) != SQLITE_OK) {
 		String resp = "Failed to fetch data: ";
 		resp += sqlite3_errmsg(db);
-		debug_out(resp,													DEBUG_ERROR, 1);
+		debug_out(resp,																			DEBUG_ERROR, 1);
 		sqlite3_finalize(res);
 	}
 	else {
 		if (sqlite3_step(res) != SQLITE_ROW) {
 			String resp = "Step failure: ";
 			resp += sqlite3_errmsg(db);
-			debug_out(resp,												DEBUG_ERROR, 1);
+			debug_out(resp,																		DEBUG_ERROR, 1);
 			sqlite3_finalize(res);
 		}
 		else {
 			count = sqlite3_column_int64(res, 0);
 			result = false;
-			debug_out("GetDB_Count returns: " + String((int)count),	DEBUG_MED_INFO, 1);
+			debug_out("GetDB_Count returns: " + String((int)count),								DEBUG_MED_INFO, 1);
 
 			sqlite3_finalize(res);
 		}
@@ -849,14 +851,14 @@ bool GetDB_Data(const char *sql, String &firstCol, String &otherCol){
 	if (sqlite3_prepare_v2(db, sql, -1, &res, NULL) != SQLITE_OK) {
 		String resp = "Failed to fetch data: ";
 		resp += sqlite3_errmsg(db);
-		debug_out(resp,													DEBUG_ERROR, 1);
+		debug_out(resp,																			DEBUG_ERROR, 1);
 		sqlite3_finalize(res);
 	}
 	else {
 		if (sqlite3_step(res) != SQLITE_ROW) {
 			String resp = "Step failure: ";
 			resp += sqlite3_errmsg(db);
-			debug_out(resp,												DEBUG_MED_INFO, 1);
+			debug_out(resp,																		DEBUG_MED_INFO, 1);
 			sqlite3_finalize(res);
 		}
 		else {
@@ -1404,34 +1406,42 @@ void sensorGPS() {
 	// gps.time.hour() resets Updated flag!
 	if(gps.time.isUpdated() && gps.time.isValid()){
 
-		// Set time from GPS
-	    time_t t_of_day;
-	    struct tm t;
+		  if(gps.date.year() > 2020){									// check if time was set from satelite
 
-	    timeval epoch;
-	    const timeval *tv = &epoch;
+				// Set time from GPS
+				time_t t_of_day;
+				struct tm t;
 
-	    timezone utc = {0, 0};// {gmtOffset_sec/60, daylightOffset_sec/60};
-	    const timezone *tz = &utc;
+				timeval epoch;
+				const timeval *tv = &epoch;
 
-	    t.tm_year = gps.date.year()  - 1900;
-	    t.tm_mon  = gps.date.month() - 1;   					// Month, 0 - jan
-	    t.tm_mday = gps.date.day();         					// Day of the month
+				timezone utc = {0, 0};									// {gmtOffset_sec/60, daylightOffset_sec/60};
+				const timezone *tz = &utc;
 
-	    t.tm_hour = gps.time.hour() + gmtOffset_sec/3600; 		// somewhy not timezone utc nor setTimeZone works, always +0 hours
+				t.tm_year = gps.date.year()  - 1900;
+				t.tm_mon  = gps.date.month() - 1;   					// Month, 0 - jan
+				t.tm_mday = gps.date.day();         					// Day of the month
 
-	    t.tm_min  = gps.time.minute();
-	    t.tm_sec  = gps.time.second();
+				t.tm_hour = gps.time.hour() + gmtOffset_sec/3600; 		// somewhy not timezone utc nor setTimeZone works, always +0 hours
 
-		debug_out("GPS Time: " + String(gps.time.hour())+":" + String(gps.time.minute()),	DEBUG_MED_INFO, 1);
+				t.tm_min  = gps.time.minute();
+				t.tm_sec  = gps.time.second();
 
-	    t_of_day  = mktime(&t);
+				debug_out("GPS Time: " + String(gps.time.hour())+":" + String(gps.time.minute()),	DEBUG_MED_INFO, 1);
 
-	    epoch = {t_of_day, 0};
+				t_of_day  = mktime(&t);
 
-	    settimeofday(tv, tz);
+				epoch = {t_of_day, 0};
 
-		debug_out(F("GPS: GPS Time set"), 													DEBUG_MED_INFO, 1);
+				settimeofday(tv, tz);
+
+				debug_out(F("GPS: GPS Time set"), 													DEBUG_MED_INFO, 1);
+
+		  }
+		  else
+		  {
+				debug_out(F("GPS: GPS Time was not receieved from SAT yet"), 						DEBUG_MED_INFO, 1);
+		  }
 
 	}
 
@@ -1483,14 +1493,14 @@ bool initGPS() {
 
 	static int callback(void *data, int argc, char **argv, char **azColName) {
 		 int i;
-		 debug_out(String((const char*)data), 					DEBUG_MIN_INFO, 0);
-		 debug_out(F(": "), 									DEBUG_MIN_INFO, 0);
+		 debug_out(String((const char*)data), 					DEBUG_MED_INFO, 0);
+		 debug_out(F(": "), 									DEBUG_MED_INFO, 0);
 		 for (i = 0; i<argc; i++){
-				 debug_out(String(azColName[i]), 				DEBUG_MIN_INFO, 0);
-				 debug_out(F(" = "), 							DEBUG_MIN_INFO, 0);
-				 debug_out(String(argv[i] ? argv[i] : "NULL"), 	DEBUG_MIN_INFO, 1);
+				 debug_out(String(azColName[i]), 				DEBUG_MED_INFO, 0);
+				 debug_out(F(" = "), 							DEBUG_MED_INFO, 0);
+				 debug_out(String(argv[i] ? argv[i] : "NULL"), 	DEBUG_MED_INFO, 1);
 		 }
-		 debug_out(F(""), 										DEBUG_MIN_INFO, 1);
+		 debug_out(F(""), 										DEBUG_MED_INFO, 1);
 		 return 0;
 	}
 
@@ -1501,13 +1511,13 @@ bool initGPS() {
 				 debug_out(String(sqlite3_errmsg(*db)), 		DEBUG_ERROR, 1);
 				 return rc;
 		 } else {
-				 debug_out(F("Opened database successfully"), 	DEBUG_MIN_INFO, 1);
+				 debug_out(F("Opened database successfully"), 	DEBUG_MED_INFO, 1);
 		 }
 		 return rc;
 	}
 
 	int db_exec(sqlite3 *db, const char *sql) {
-		 debug_out("db_exec: " + String(sql), 					DEBUG_MIN_INFO, 1);
+		 debug_out("db_exec: " + String(sql), 					DEBUG_MED_INFO, 1);
 
 		 int rc = sqlite3_exec(db, sql, callback, (void*)data, &zErrMsg);
 		 if (rc != SQLITE_OK) {
@@ -1515,7 +1525,7 @@ bool initGPS() {
 				 debug_out(String(zErrMsg), 					DEBUG_ERROR, 1);
 				 sqlite3_free(zErrMsg);
 		 } else {
-				 debug_out(F("Operation done successfully"), 	DEBUG_MIN_INFO, 1);
+				 debug_out(F("Operation done successfully"), 	DEBUG_MED_INFO, 1);
 		 }
 
 		 return rc;

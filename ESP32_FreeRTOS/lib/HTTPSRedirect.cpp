@@ -40,7 +40,7 @@ bool HTTPSRedirect::printRedir(void){
 
 
 	// Recursive call to the requested URL on the server
-	Serial.println("Call recursively printRedir()");
+	DPRINTLN("Call recursively printRedir()");
 	//          Serial.print("HTTPS Free Heap/Stack:");
 	//          Serial.print(ESP.getFreeHeap(),DEC);
 	//          Serial.print(" / ");
@@ -79,8 +79,8 @@ bool HTTPSRedirect::printRedir(void){
     
     httpStatus = getResponseStatus();
 
-    Serial.print("While loop in printRedir. HTTPS redir 77. httpStatus = ");  // debug stuck
-    Serial.println(httpStatus);
+	DPRINTLN("While loop in printRedir. HTTPS redir 77. httpStatus = ");  // debug stuck
+	DPRINTLN(httpStatus);
 
     // Only some HTTP response codes are checked for
     // http://www.restapitutorial.com/httpstatuscodes.html
@@ -115,8 +115,8 @@ bool HTTPSRedirect::printRedir(void){
             _myResponse.redirected = true;
             
             // Make a new connection to the re-direction server
-            Serial.println("Connection to re-directed URL (106)...");
-            Serial.println(_redirHost.c_str());
+            DPRINTLN("Connection to re-directed URL (106)...");
+            DPRINTLN(_redirHost.c_str());
 
     		vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
             //wdt_reset(); // nodemcu is alive // it is already in yield
