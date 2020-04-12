@@ -33,7 +33,7 @@ template<typename T, std::size_t N> constexpr std::size_t array_num_elements(con
 /*****************************************************************
  * send SDS011 command (start, stop, continuous mode, version		*
  *****************************************************************/
-static void SDS_cmd(PmSensorCmd cmd) {//static
+void SDS_cmd(PmSensorCmd cmd) {
 	static constexpr uint8_t start_cmd[] PROGMEM = {
 		0xAA, 0xB4, 0x06, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0x06, 0xAB
 	};
@@ -69,7 +69,7 @@ static void SDS_cmd(PmSensorCmd cmd) {//static
 /*****************************************************************
  * send Plantower PMS sensor command start, stop, cont. mode		 *
  *****************************************************************/
-static void PMS_cmd(PmSensorCmd cmd) {//static
+void PMS_cmd(PmSensorCmd cmd) {
 	static constexpr uint8_t start_cmd[] PROGMEM = {
 		0x42, 0x4D, 0xE4, 0x00, 0x01, 0x01, 0x74
 	};

@@ -8,15 +8,18 @@
 #ifndef SENSORS_H_
 #define SENSORS_H_
 
-	void sensorSDS();
-	void sensorPMS();
-
-
 	enum class PmSensorCmd {
 		Start,
 		Stop,
 		ContinuousMode,
 		VersionDate
 	};
+
+	void sensorSDS();
+	void sensorPMS();
+
+	void SDS_cmd(PmSensorCmd cmd);
+	void PMS_cmd(PmSensorCmd cmd);
+
 
 #endif /* SENSORS_H_ */

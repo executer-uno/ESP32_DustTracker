@@ -103,6 +103,7 @@
 #include "Definitions.h"
 #include "Credentials.h"
 #include "Sensors.h"
+#include <rom/rtc.h>
 
 // ***************************** Variables *********************************
 
@@ -228,6 +229,22 @@ void setup() {
 	WiFi_mutex		= xSemaphoreCreateMutex();
 
 
+	serialSDS.begin(9600, SERIAL_8N1, PM_SERIAL_RX,  PM_SERIAL_TX);			 		// for HW UART SDS
+	serialPMS.begin(9600, SERIAL_8N1, PM2_SERIAL_RX, PM2_SERIAL_TX);			 	// for HW UART PMS
+
+	SDS_cmd(PmSensorCmd::Stop);
+	PMS_cmd(PmSensorCmd::Stop);
+
+
+	// check brownout
+	// https://github.com/espressif/arduino-esp32/issues/449
+	if(rtc_get_reset_reason(0)==15){
+		ESP.deepSleep(UINT_MAX);
+	}
+	if(rtc_get_reset_reason(1)==15){
+		ESP.deepSleep(UINT_MAX);
+	}
+
 	// Configure buttons
 	pinMode(BUT_1, INPUT_PULLUP);
 	pinMode(BUT_2, INPUT_PULLUP);
@@ -235,10 +252,6 @@ void setup() {
 
  	// initialize digital LED_BUILTIN as an output.
 	pinMode(LED_BUILTIN, OUTPUT);
-
-	serialSDS.begin(9600, SERIAL_8N1, PM_SERIAL_RX,  PM_SERIAL_TX);			 		// for HW UART SDS
-	serialPMS.begin(9600, SERIAL_8N1, PM2_SERIAL_RX, PM2_SERIAL_TX);			 	// for HW UART PMS
-
 
 
 	char MAC_chars[15]; //Create a Unique AP from MAC address
