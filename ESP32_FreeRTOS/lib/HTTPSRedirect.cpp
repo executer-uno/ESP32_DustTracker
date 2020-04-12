@@ -118,8 +118,7 @@ bool HTTPSRedirect::printRedir(void){
             Serial.println("Connection to re-directed URL (106)...");
             Serial.println(_redirHost.c_str());
 
-            Serial.println("Yeld called from HTTPS redir 116");  // debug stuck
-            yield();
+    		vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
             //wdt_reset(); // nodemcu is alive // it is already in yield
             
             if (!connect(_redirHost.c_str(), _httpsPort)) {

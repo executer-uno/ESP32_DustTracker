@@ -15,8 +15,6 @@
 
 namespace cfg {
 	extern int	debug;
-	extern char wlanssid[35];
-	extern char wlanpwd[65];
 }
 
 extern SoftwareSerial		Serial;

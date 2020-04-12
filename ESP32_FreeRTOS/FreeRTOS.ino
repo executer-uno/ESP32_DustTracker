@@ -104,12 +104,6 @@
 #include "Credentials.h"
 #include "Sensors.h"
 
-#ifndef WLANSSID
-	#define WLANSSID   "MyWifiSSID"  //in Credentials.h
-	#define WLANPWD    "MyWiFiPass"  //in Credentials.h
-#endif
-
-
 // ***************************** Variables *********************************
 
 HardwareSerial 	serialSDS(1);
@@ -171,9 +165,6 @@ HardwareSerial 	serialPMS(2);
 #endif
 
 namespace cfg {
-	char wlanssid[35] 	= WLANSSID;
-	char wlanpwd[65] 	= WLANPWD;
-
 	int	debug 			= DEBUG;
 
 	bool sds_read 		= SDS_READ;
@@ -248,6 +239,15 @@ void setup() {
 	serialSDS.begin(9600, SERIAL_8N1, PM_SERIAL_RX,  PM_SERIAL_TX);			 		// for HW UART SDS
 	serialPMS.begin(9600, SERIAL_8N1, PM2_SERIAL_RX, PM2_SERIAL_TX);			 	// for HW UART PMS
 
+	char MAC_chars[15]; //Create a Unique AP from MAC address
+	uint64_t chipid= ESP.getEfuseMac();			//The chip ID is essentially its MAC address(length: 6 bytes).
+	uint16_t chiph = (uint16_t)(chipid>>32);	//High 	2 bytes
+	uint32_t chipl = (uint32_t)(chipid);		//Low	4 bytes
+
+	snprintf(MAC_chars,15,  "%04X", chiph);
+	snprintf(MAC_chars+4,15,"%08X", chipl);
+	esp_chipid = String(MAC_chars);			//50E1F1BF713C
+
 	#ifdef CFG_GPS
 		serialGPS.begin(9600, SERIAL_8N1, GPS_SERIAL_RX, GPS_SERIAL_TX);			// for HW UART GPS
 
@@ -279,10 +279,9 @@ void setup() {
 
 			display.setTextAlignment(TEXT_ALIGN_CENTER);
 
-			display.drawString(64, 0, "Bluetooth terminal ready");
-			display.setTextAlignment(TEXT_ALIGN_LEFT);
-			display.drawString(0, 13, "BT Device name:");
-			display.drawString(0, 25, "ESP32_PMS_Station");
+			display.drawString(64, 0, "WiFi SmartConfig");
+			display.drawString(64, 13, "press button to start");
+
 		#endif
 	#endif
 
@@ -299,8 +298,79 @@ void setup() {
 		digitalWrite(LED_BUILTIN, LOW );
 		delay(100);
 		progress += ".";
-		display.drawString(0, 37, progress);
-		display.display();
+
+		#ifdef CFG_LCD
+			display.drawString(0, 37, progress);
+			display.display();
+		#endif
+
+		bool BUT_A = !digitalRead(BUT_1);	// no internal pullup
+		bool BUT_B = !digitalRead(BUT_2);
+		bool BUT_C = !digitalRead(BUT_3);
+
+		if(BUT_A || BUT_B || BUT_C){
+
+			// Display WiFi config
+			xSemaphoreTake(I2C_mutex, portMAX_DELAY);
+			display.clear();
+			display.displayOn();
+			display.setTextAlignment(TEXT_ALIGN_LEFT);
+			display.drawString(0, 0,  "START ESP TOUCH SC");
+			display.drawString(0, 13, "on your smartphone");
+			display.display();
+
+			//Init WiFi as Station, start SmartConfig
+			WiFi.mode(WIFI_AP_STA);
+			WiFi.beginSmartConfig();
+
+			//Wait for SmartConfig packet from mobile
+			debug_out("Waiting for SmartConfig",						DEBUG_MIN_INFO, 1);
+
+			while (!WiFi.smartConfigDone()) {
+				Serial.print(".");
+
+
+				digitalWrite(LED_BUILTIN, HIGH);    // turn the LED ON by making the voltage HIGH
+				vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
+				digitalWrite(LED_BUILTIN, LOW );
+				vTaskDelay(500);  // one tick delay (1ms) in between reads for stability
+
+
+			}
+
+			//Wait for WiFi to connect to AP
+			debug_out("Waiting for WiFi",								DEBUG_MIN_INFO, 1);
+			digitalWrite(LED_BUILTIN, LOW );
+
+			while (WiFi.status() != WL_CONNECTED) {
+
+				display.drawString(0, 25, "SmartConfig received");
+				display.display();
+
+				vTaskDelay(500);  // one tick delay (1ms) in between reads for stability
+				Serial.print(".");
+
+
+				digitalWrite(LED_BUILTIN, HIGH);    // turn the LED ON by making the voltage HIGH
+				vTaskDelay(20);  // one tick delay (1ms) in between reads for stability
+				digitalWrite(LED_BUILTIN, LOW );
+				vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
+
+
+			}
+
+			display.drawString(0, 37, "IP: " + WiFi.localIP().toString());
+			display.drawString(0, 49, "wait for power cycle");
+			digitalWrite(LED_BUILTIN, LOW );
+
+
+			display.display();
+
+			while(true){
+				vTaskDelay(500); // one tick delay (1ms) in between reads for stability
+			}
+
+		}
 	}
 	#endif
 
@@ -429,14 +499,7 @@ void setup() {
 
 		}
 
-		char MAC_chars[15]; //Create a Unique AP from MAC address
-		uint64_t chipid= ESP.getEfuseMac();			//The chip ID is essentially its MAC address(length: 6 bytes).
-		uint16_t chiph = (uint16_t)(chipid>>32);	//High 2 bytes
-		uint32_t chipl = (uint32_t)(chipid);		//Low	4 bytes
 
-		snprintf(MAC_chars,15,"%04X", chiph);
-		snprintf(MAC_chars+4,15,"%08X", chipl);
-		esp_chipid = String(MAC_chars);			//50E1F1BF713C
 
 	#endif
 
@@ -477,7 +540,7 @@ void setup() {
 		,  "Keyboard"
 		,  1024  // Stack size
 		,  NULL
-		,  1  // Priority
+		,  3  // Priority
 		,  NULL
 		,  ARDUINO_RUNNING_CORE);
 
@@ -499,7 +562,7 @@ void setup() {
 		,  "Display"
 		,  1024*4  // Stack size
 		,  NULL
-		,  2  // Priority
+		,  3  // Priority
 		,  &xTaskDisplay_handle
 		,  ARDUINO_RUNNING_CORE);
 
@@ -1205,7 +1268,7 @@ void display_values() {
 		display.drawString(0, 37, display_lines[2]);
 
 		if(screens[next_display_count % screen_count] == 5){
-			display.drawString(0, 52, display_lines[3]);
+			display.drawString(0, 49, display_lines[3]);
 		}
 		else{
 			display.setTextAlignment(TEXT_ALIGN_CENTER);
@@ -1645,11 +1708,12 @@ static void waitForWifiToConnect(int maxRetries) {
 
 void connectWifi() {
 
-	debug_out(F("Connecting to "), 							DEBUG_ALWAYS, 0);
-	debug_out(cfg::wlanssid,								DEBUG_ALWAYS, 1);
+	debug_out(F("Connecting to wifi"), 						DEBUG_ALWAYS, 1);
 
-	WiFi.begin(cfg::wlanssid, cfg::wlanpwd); // Start WiFI
+	WiFi.begin(); // Start WiFI
 	WiFi.mode(WIFI_STA);
+
+	debug_out(WiFi.SSID(),									DEBUG_ALWAYS, 1);
 
 }
 
