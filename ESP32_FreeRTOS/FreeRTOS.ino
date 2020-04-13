@@ -834,19 +834,13 @@ void loop()
 								TEMP2	= "{\"sensor\":\"" + String(ID_SENSOR_HUMID) + "\" , ";
 								BME280_H.replace("{", TEMP2);
 
-								dataOSM  = "[\r\n";
-								dataOSM +=  SDS_100;
-								dataOSM +=  ",\r\n";
-								dataOSM +=  SDS_025;
-								dataOSM +=  ",\r\n";
-								dataOSM +=  PMS_100;
-								dataOSM +=  ",\r\n";
-								dataOSM +=  PMS_025;
-								dataOSM +=  ",\r\n";
-								dataOSM += BME280_P;
-								dataOSM +=  ",\r\n";
-								dataOSM += BME280_T;
-								dataOSM +=  ",\r\n";
+								dataOSM  = "[";
+								dataOSM +=  SDS_100 + ",";
+								dataOSM +=  SDS_025 + ",";
+								dataOSM +=  PMS_100 + ",";
+								dataOSM +=  PMS_025 + ",";
+								dataOSM += BME280_P + ",";
+								dataOSM += BME280_T + ",";
 								dataOSM += BME280_H;
 								dataOSM += "]";
 
@@ -928,22 +922,26 @@ void loop()
 			// Send to opensensemap
 			OsemApi api = OsemApi();
 
-			debug_out("OsemApi: dataOSM=" + dataOSM, 											DEBUG_MIN_INFO, 1);
+			debug_out("OsemApi: dataOSM=" + dataOSM, 											DEBUG_MED_INFO, 1);
 
-			OSsavedone = true;
+//			OSsavedone = true;
 //			OSsavedone &= api.postMeasurement(BME280_T, 	ID_SENSOR_TEMP);
 //			OSsavedone &= api.postMeasurement(BME280_P, 	ID_SENSOR_PRESS);
 //			OSsavedone &= api.postMeasurement(BME280_H, 	ID_SENSOR_HUMID);
 //			OSsavedone &= api.postMeasurement(PMS_100, 		ID_SENSOR_PMS_100);
 //			OSsavedone &= api.postMeasurement(PMS_025, 		ID_SENSOR_PMS_025);
-			OSsavedone &= api.postMeasurement(SDS_100, 		ID_SENSOR_SDS_100);
-			OSsavedone &= api.postMeasurement(SDS_025, 		ID_SENSOR_SDS_025);
+//			OSsavedone &= api.postMeasurement(SDS_100, 		ID_SENSOR_SDS_100);
+//			OSsavedone &= api.postMeasurement(SDS_025, 		ID_SENSOR_SDS_025);
+
+			OSsavedone  = api.postMeasurement(dataOSM);
 
 
 			if(!OSsavedone){
 				debug_out(F("OsemApi: data transfer error"), 									DEBUG_ERROR, 1);
 			}
-
+			else{
+				debug_out(F("OsemApi: transfer OK"),		 									DEBUG_MIN_INFO, 1);
+			}
 
 		}
 

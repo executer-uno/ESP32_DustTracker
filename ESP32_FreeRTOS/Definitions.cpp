@@ -200,7 +200,7 @@ String Value2Json(const String& type, const String& value) {
  * convert value to json string with timestamp and location																	*
  *****************************************************************/
 String ValueLocated2Json(const String& timestamp, const String& lat, const String& lng, const String& value) {
-	String s = F("{\"value\":\"{v}\",\"createdAt\":\"{t}\",\"location\":[{lng},{lat}]}\r\n");
+	String s = F("{\"value\":\"{v}\",\"createdAt\":\"{t}\",\"location\":[{lng},{lat}]}");
 
 	//s = F("{\"value\":\"{v}\" , \"createdAt\":\"{t}\" }\r\n");
 
