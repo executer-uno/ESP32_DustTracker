@@ -69,7 +69,6 @@
 #ifdef CFG_SQL
 
 
-
 	#include <sqlite3.h>
 	#include <SPI.h>
 	#include <FS.h>
@@ -90,7 +89,8 @@
 		 test or else use the SPIFFS plugin to create a partition
 		 https://github.com/me-no-dev/arduino-esp32fs-plugin */
 	#define FORMAT_SPIFFS_IF_FAILED true
-	#define DB_PATH "/sd/DB_portable04.db"
+	#define DB_FILE 	   "/DB_portable04.db"
+	#define DB_PATH 	"/sd/DB_portable04.db"
 
 	sqlite3 	*db;
 	int 		rc;
@@ -158,7 +158,6 @@ HardwareSerial 	serialPMS(2);
 	String url2 = String("/macros/s/") + GScriptId + "/exec?cal";				// Fetch Google Calendar events for 1 week ahead
 	String url3 = String("/macros/s/") + GScriptId + "/exec?read";				// Read from Google Spreadsheet
 	String payload_base =	"{\"command\": \"appendRow\", \"sheet_name\": \"DATA\", \"values\": ";
-	String payload = "";
 
 	HTTPSRedirect* client = nullptr;
 
@@ -229,6 +228,7 @@ void setup() {
 	SQL_mutex		= xSemaphoreCreateMutex();
 	WiFi_mutex		= xSemaphoreCreateMutex();
 
+	cfg::debug 		= DEBUG_ALWAYS;
 
 	serialSDS.begin(9600, SERIAL_8N1, PM_SERIAL_RX,  PM_SERIAL_TX);			 		// for HW UART SDS
 	serialPMS.begin(9600, SERIAL_8N1, PM2_SERIAL_RX, PM2_SERIAL_TX);			 	// for HW UART PMS
@@ -444,8 +444,7 @@ void setup() {
 
 			debug_out("SD Card Size: "+ String(int(cardSize)) 						+ "MB",		DEBUG_ALWAYS, 1);
 			debug_out("Total space:  "+ String(int(SD.totalBytes() / (1024 * 1024)))+ "MB",		DEBUG_ALWAYS, 1);
-			debug_out("Used space:   "+ String(int(SD.usedBytes() / (1024 * 1024)))	+ "MB",		DEBUG_ALWAYS, 1);
-
+			debug_out("Used space:   "+ String(int(SD.usedBytes() / (1024)))		+ "kB",		DEBUG_ALWAYS, 1);
 
 			sqlite3_initialize();
 
@@ -619,6 +618,9 @@ void setup() {
 */
 
   // Now the task scheduler, which takes over control of scheduling individual tasks, is automatically started.
+
+	cfg::debug 		= DEBUG;
+
 }
 
 void loop()
@@ -628,6 +630,7 @@ void loop()
 
 	String  sql				= "";
 	String  data			= "";
+	String  dataOSM			= "";
 
 	String  RowID			= "";
 	String  TEMP1 			= "";
@@ -638,9 +641,12 @@ void loop()
 
 	xSemaphoreTake(SQL_mutex, portMAX_DELAY);
 	data	="";
+	dataOSM ="";
 
 	if (WiFi.isConnected()) {
 
+		bool	GSdata			= false;
+		bool	OSdata			= false;
 		bool	GSsavedone		= false;
 		bool	OSsavedone		= false;
 
@@ -659,7 +665,7 @@ void loop()
 		if (!db_open(DB_PATH, &db)){
 
 			// Check if anything in database to be sent?
-			sql = F("SELECT COUNT(*) FROM timestamps WHERE sendGS IS NULL");
+			sql = F("SELECT COUNT(*) FROM timestamps WHERE sendGS IS NULL OR sendAD IS NULL");
 
 			if(!GetDB_Count(sql.c_str(), rec_count64)){
 				rec_count = rec_count64;
@@ -673,10 +679,15 @@ void loop()
 					String MeasGPS		= "";
 					String MeasBME		= "";
 
-					sql = F("SELECT datetime, Id FROM timestamps WHERE sendGS IS NULL ORDER BY datetime ASC LIMIT 1");
-					GetDB_Data(sql.c_str(), DateTime	, RowID);
+					sql = F("SELECT datetime, Id, sendGS, sendAD FROM timestamps WHERE sendGS IS NULL OR sendAD IS NULL ORDER BY datetime ASC LIMIT 1");
+					GetDB_Data(sql.c_str(), DateTime	, TEMP1);
 
-					RowID.replace(",", "");
+					debug_out("WWW: From timestamps DB: TEMP1= " + TEMP1,														DEBUG_ALWAYS, 1);
+
+					RowID			=	StrSplitItem(TEMP1, ',', 1);
+					GSdata			=	StrSplitItem(TEMP1, ',', 2).length() == 0;
+					OSdata			=	StrSplitItem(TEMP1, ',', 3).length() == 0;
+
 					RowID.trim();
 
 					debug_out("WWW: From timestamps DB: RowID= " + RowID + "; DateTime= " + DateTime,			DEBUG_MED_INFO, 1);
@@ -697,20 +708,12 @@ void loop()
 						GetDB_Data(sql.c_str(), TEMP1	, MeasGPS);
 #endif
 
-						//MeasGPS = "99.9,99.9,";
-
 						debug_out(("WWW: From measSDS DB: ") + MeasSDS,											DEBUG_MED_INFO, 1);
 						debug_out(("WWW: From measPMS DB: ") + MeasPMS,											DEBUG_MED_INFO, 1);
 						debug_out(("WWW: From measBME DB: ") + MeasBME,											DEBUG_MED_INFO, 1);
 						debug_out(("WWW: From measGPS DB: ") + MeasGPS,											DEBUG_MED_INFO, 1);
 
-						vTaskDelay(500);  // one tick delay (1ms) in between reads for stability
-
-						data = FPSTR(data_first_part);
-						data.replace("{v}", SOFTWARE_VERSION);
-
-						// GPS data
-						debug_out("WWW: Prepare JSON.",															DEBUG_MED_INFO, 1);
+						vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
 
 						String GPS_lat 		= 	StrSplitItem(MeasGPS, ',', 1);
 						String GPS_lon 		= 	StrSplitItem(MeasGPS, ',', 2);
@@ -727,65 +730,131 @@ void loop()
 						PMS_010				=	StrSplitItem(MeasPMS, ',', 3);
 
 
-						data += Var2Json(F("datetime"),						DateTime);
-						data += Var2Json(F("GPS_lat"),						GPS_lat);
-						data += Var2Json(F("GPS_lon"),						GPS_lon);
+						if(GSdata){
+							// GPS data
+							debug_out("WWW: Prepare JSON.",															DEBUG_MED_INFO, 1);
 
-						data += Var2Json(F("BME280_pressure"),				BME280_P);
-						data += Var2Json(F("BME280_temperature"), 			BME280_T);
-						data += Var2Json(F("BME280_humidity"), 				BME280_H);
+							data = FPSTR(data_first_part);
+							data.replace("{v}", SOFTWARE_VERSION);
 
-						data += Var2Json(F("SDS_P1"),						SDS_100); // PM10.0
-						data += Var2Json(F("SDS_P2"),						SDS_025); // PM 2.5
+							data += Var2Json(F("datetime"),						DateTime);
+							data += Var2Json(F("GPS_lat"),						GPS_lat);
+							data += Var2Json(F("GPS_lon"),						GPS_lon);
 
-						data += Var2Json(F("PMS_P1"),						PMS_100); // PM10.0
-						data += Var2Json(F("PMS_P2"),						PMS_025); // PM 2.5
-						data += Var2Json(F("PMS_P3"),						PMS_010); // PM 1.0
+							data += Var2Json(F("BME280_pressure"),				BME280_P);
+							data += Var2Json(F("BME280_temperature"), 			BME280_T);
+							data += Var2Json(F("BME280_humidity"), 				BME280_H);
 
-						data += "]}";
+							data += Var2Json(F("SDS_P1"),						SDS_100); // PM10.0
+							data += Var2Json(F("SDS_P2"),						SDS_025); // PM 2.5
+
+							data += Var2Json(F("PMS_P1"),						PMS_100); // PM10.0
+							data += Var2Json(F("PMS_P2"),						PMS_025); // PM 2.5
+							data += Var2Json(F("PMS_P3"),						PMS_010); // PM 1.0
+
+							data += "]}";
+
+							// prepare fo gscript
+							data.remove(0, 1);
+							data = "{\"espid\": \"" + esp_chipid + "\"," + data + "}";
+							data.replace("\"sensordatavalues\":[", "\"sensordatavalues\":{");
+							data.replace("}","");
+							data.replace("]","");
+							data += "}}}";
+							data.replace(",}}}","}}}");
+
+							data = payload_base + data;
+
+							debug_out(F("WWW: Send from buffer to spreadsheet. Payload prepared:"), 				DEBUG_MED_INFO, 1);
+							debug_out(data, 																		DEBUG_MED_INFO, 1);
+						}
+						if(OSdata){
+
+							time_t TStamp;
+							TStamp = DateTime.toInt();
+
+							TStamp -= 3600*3;
+							// TODO!! TStamp correction should depends on dayLight save period
+
+							struct tm timeinfo;
+							localtime_r(&TStamp, &timeinfo);
+							if(timeinfo.tm_year > (2016 - 1900)){
+								char timeStringBuff[50]; //50 chars should be enough
+								strftime(timeStringBuff, sizeof(timeStringBuff), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);	//"%04d-%02d-%02dT%02d:%02d:%02dZ"
+
+								String TimeStamp(timeStringBuff);
+
+								//TimeStamp = TimeStamp.substring(0, TimeStamp.length() - 2);
+								//TimeStamp += ":00";
+
+								GPS_lat = "47.81";	// anonimizer
+								GPS_lon = "35.10";	// anonimizer
 
 
-						time_t TStamp = 1586722960;
-						//TStamp = DateTime.toInt();
+								// Take out AVG values
+								BME280_P			=	StrSplitItem(BME280_P, ':', 2);
+								BME280_T			=	StrSplitItem(BME280_T, ':', 2);
+								BME280_H			=	StrSplitItem(BME280_H, ':', 2);
 
-						struct tm timeinfo;
-						localtime_r(&TStamp, &timeinfo);
-				        if(timeinfo.tm_year > (2016 - 1900)){
-							char timeStringBuff[50]; //50 chars should be enough
-							strftime(timeStringBuff, sizeof(timeStringBuff), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);	//"%04d-%02d-%02dT%02d:%02d:%02dZ"
+								SDS_100				=	StrSplitItem(SDS_100, ':', 2);
+								SDS_025				=	StrSplitItem(SDS_025, ':', 2);
 
-							String TimeStamp(timeStringBuff);
+								PMS_100				=	StrSplitItem(PMS_100, ':', 2);
+								PMS_025				=	StrSplitItem(PMS_025, ':', 2);
+								PMS_010				=	StrSplitItem(PMS_010, ':', 2);
 
-							GPS_lat = "47.81";	// anonimizer
-							GPS_lon = "35.10";	// anonimizer
+								// Prepare JSON packages
+								SDS_100  = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, SDS_100);
+								SDS_025  = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, SDS_025);
+								PMS_100  = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, PMS_100);
+								PMS_025  = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, PMS_025);
+								PMS_010  = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, PMS_010);
+								BME280_P = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, BME280_P);
+								BME280_T = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, BME280_T);
+								BME280_H = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, BME280_H);
 
-							SDS_100  = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, SDS_100);
-							SDS_025  = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, SDS_025);
-							PMS_100  = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, PMS_100);
-							PMS_025  = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, PMS_025);
-							PMS_010  = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, PMS_010);
-							BME280_P = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, SDS_100);
-							BME280_T = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, SDS_100);
-							BME280_H = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, SDS_100);
+								TEMP2	= "{\"sensor\":\"" + String(ID_SENSOR_SDS_100) + "\" , ";
+								SDS_100.replace("{", TEMP2);
 
-				        }
+								TEMP2	= "{\"sensor\":\"" + String(ID_SENSOR_SDS_025) + "\" , ";
+								SDS_025.replace("{", TEMP2);
 
+								TEMP2	= "{\"sensor\":\"" + String(ID_SENSOR_PMS_100) + "\" , ";
+								PMS_100.replace("{", TEMP2);
 
-						// prepare fo gscript
-						data.remove(0, 1);
-						data = "{\"espid\": \"" + esp_chipid + "\"," + data + "}";
-						data.replace("\"sensordatavalues\":[", "\"sensordatavalues\":{");
-						data.replace("}","");
-						data.replace("]","");
-						data += "}}}";
-						data.replace(",}}}","}}}");
+								TEMP2	= "{\"sensor\":\"" + String(ID_SENSOR_PMS_025) + "\" , ";
+								PMS_025.replace("{", TEMP2);
 
-						payload = payload_base + data;
+								TEMP2	= "{\"sensor\":\"" + String(ID_SENSOR_PRESS) + "\" , ";
+								BME280_P.replace("{", TEMP2);
 
+								TEMP2	= "{\"sensor\":\"" + String(ID_SENSOR_TEMP) + "\" , ";
+								BME280_T.replace("{", TEMP2);
 
-						debug_out(F("WWW: Send from buffer to spreadsheet. Payload:"), 							DEBUG_MED_INFO, 1);
-						debug_out(payload, 																		DEBUG_MED_INFO, 1);
+								TEMP2	= "{\"sensor\":\"" + String(ID_SENSOR_HUMID) + "\" , ";
+								BME280_H.replace("{", TEMP2);
 
+								dataOSM  = "[\r\n";
+								dataOSM +=  SDS_100;
+								dataOSM +=  ",\r\n";
+								dataOSM +=  SDS_025;
+								dataOSM +=  ",\r\n";
+								dataOSM +=  PMS_100;
+								dataOSM +=  ",\r\n";
+								dataOSM +=  PMS_025;
+								dataOSM +=  ",\r\n";
+								dataOSM += BME280_P;
+								dataOSM +=  ",\r\n";
+								dataOSM += BME280_T;
+								dataOSM +=  ",\r\n";
+								dataOSM += BME280_H;
+								dataOSM += "]";
+
+							}
+							else{
+								OSdata = false;
+							}
+						}
 					}
 				}
 			}
@@ -796,7 +865,7 @@ void loop()
 		vTaskDelay(50);  // one tick delay (1ms) in between reads for stability
 
 
-		if(data.length()){
+		if(GSdata){
 
 			// Connect to spreadsheet
 
@@ -838,7 +907,7 @@ void loop()
 			{
 				debug_out(F("WWW: Client object requests to Spreadsheet"), 						DEBUG_MED_INFO, 1);
 
-				if(client->POST(url2, host, payload)){
+				if(client->POST(url2, host, data)){
 					debug_out(F("Spreadsheet updated"), DEBUG_MIN_INFO, 1);
 					GSsavedone	=	 true;
 				}
@@ -852,46 +921,57 @@ void loop()
 			client = nullptr;
 
 			debug_out(F("WWW: Client object deleted"), 											DEBUG_MED_INFO, 1);
-
+		}
+		if(OSdata){
+			debug_out(F("OsemApi: Transfer start"), 											DEBUG_MED_INFO, 1);
 
 			// Send to opensensemap
 			OsemApi api = OsemApi();
 
+			debug_out("OsemApi: dataOSM=" + dataOSM, 											DEBUG_MIN_INFO, 1);
+
 			OSsavedone = true;
-			OSsavedone &= api.postMeasurement(BME280_T, 	ID_SENSOR_TEMP);
-			OSsavedone &= api.postMeasurement(BME280_P, 	ID_SENSOR_PRESS);
-			OSsavedone &= api.postMeasurement(BME280_H, 	ID_SENSOR_HUMID);
-			OSsavedone &= api.postMeasurement(PMS_100, 		ID_SENSOR_PMS_100);
-			OSsavedone &= api.postMeasurement(PMS_025, 		ID_SENSOR_PMS_025);
-			OSsavedone &= api.postMeasurement(PMS_010, 		ID_SENSOR_PMS_010);
+//			OSsavedone &= api.postMeasurement(BME280_T, 	ID_SENSOR_TEMP);
+//			OSsavedone &= api.postMeasurement(BME280_P, 	ID_SENSOR_PRESS);
+//			OSsavedone &= api.postMeasurement(BME280_H, 	ID_SENSOR_HUMID);
+//			OSsavedone &= api.postMeasurement(PMS_100, 		ID_SENSOR_PMS_100);
+//			OSsavedone &= api.postMeasurement(PMS_025, 		ID_SENSOR_PMS_025);
 			OSsavedone &= api.postMeasurement(SDS_100, 		ID_SENSOR_SDS_100);
 			OSsavedone &= api.postMeasurement(SDS_025, 		ID_SENSOR_SDS_025);
 
+
 			if(!OSsavedone){
-				debug_out(F("OSM: data push error"), 											DEBUG_ERROR, 1);
+				debug_out(F("OsemApi: data transfer error"), 									DEBUG_ERROR, 1);
 			}
 
 
-			if(GSsavedone || OSsavedone){
+		}
 
-				// Data sent successfully. Remove record from DB
-				if (!db_open(DB_PATH, &db)){
+		if(GSsavedone || OSsavedone){
 
-					if(GSsavedone){
-						sql = "UPDATE timestamps SET sendGS = 1 WHERE Id='" + RowID + "';";
-						GetDB_Data(sql.c_str(), TEMP1	, TEMP2);							// Mark record as sended
-						debug_out(F("Spreadsheet updated successfully. Data row marked"), 			DEBUG_MED_INFO, 1);
-					}
+			// Data sent successfully. Remove record from DB
+			if (!db_open(DB_PATH, &db)){
+
+				sql = "UPDATE timestamps SET ";
+
+				if(GSsavedone){
+					sql += "sendGS = 1";
 					if(OSsavedone){
-						sql = "UPDATE timestamps SET sendAD = 1 WHERE Id='" + RowID + "';";
-						GetDB_Data(sql.c_str(), TEMP1	, TEMP2);							// Mark record as sended
-						debug_out(F("Spreadsheet updated successfully. Data row marked"), 			DEBUG_MED_INFO, 1);
+						sql += ", ";
 					}
-
 				}
-				sqlite3_close(db);
-			}
+				if(OSsavedone){
+					sql += "sendAD = 1";
+				}
+				sql += " WHERE Id='" + RowID + "';";
 
+				debug_out("SQL UPDATE: " + sql, 											DEBUG_MIN_INFO, 1);
+
+				GetDB_Data(sql.c_str(), TEMP1	, TEMP2);		// Mark record as sended
+				debug_out(F("Spreadsheet updated successfully. Data row marked"), 			DEBUG_MED_INFO, 1);
+
+			}
+			sqlite3_close(db);
 		}
 	}
 	else{
@@ -905,7 +985,7 @@ void loop()
 #endif
 
 
-	vTaskDelay(5000);  // one tick delay (1ms) in between reads for stability
+	vTaskDelay(6000);  // one tick delay (1ms) in between reads for stability
 }
 
 
@@ -999,13 +1079,13 @@ void TaskBlink(void *pvParameters)  // This is a task.
 	// Mark task begin by LED
 
 	digitalWrite(LED_BUILTIN, HIGH);   	// turn the LED on (HIGH is the voltage level)
-    vTaskDelay(  3);  					// one tick delay (1ms) in between reads for stability
+    vTaskDelay(  1);  					// one tick delay (1ms) in between reads for stability
     digitalWrite(LED_BUILTIN, LOW);    	// turn the LED off by making the voltage LOW
     vTaskDelay(100);  					// one tick delay (1ms) in between reads for stability
 
 	if (WiFi.isConnected()) {
 		digitalWrite(LED_BUILTIN, HIGH);   	// turn the LED on (HIGH is the voltage level)
-		vTaskDelay(  3);  					// one tick delay (1ms) in between reads for stability
+		vTaskDelay(  1);  					// one tick delay (1ms) in between reads for stability
 		digitalWrite(LED_BUILTIN, LOW);    	// turn the LED off by making the voltage LOW
 	}
     vTaskDelay(100);  					// one tick delay (1ms) in between reads for stability
@@ -1013,7 +1093,12 @@ void TaskBlink(void *pvParameters)  // This is a task.
 
 
     if(SDSmeasPM025.status == SensorSt::ok && PMSmeasPM025.status == SensorSt::ok){
-    	vTaskDelay(2000);  // one tick delay (1ms) in between reads for stability
+    	if(BUT_DB_CLEAR_FLAG){
+    		vTaskDelay(100 );  // one tick delay (1ms) in between reads for stability
+    	}
+    	else{
+    		vTaskDelay(2000);  // one tick delay (1ms) in between reads for stability
+    	}
     }
     else{
     	vTaskDelay(500);  // one tick delay (1ms) in between reads for stability
@@ -1333,7 +1418,7 @@ void display_values() {
 
 		break;
 	case (6):
-		display_header = F("Device Info");
+		display_header = F("Info [M=CLR]");
 		display_lines[0] = "Recs:  "  + String(rec_count) + " RID: " 		+ String((int)RID);
 		display_lines[1] = "SSID:  "  + WiFi.SSID() + " (" + String(calcWiFiSignalQuality(WiFi.RSSI())) + "%)";
 		display_lines[2] = "IP:    "  + WiFi.localIP().toString();
@@ -1714,67 +1799,38 @@ void Store2DB(){
 
 
 void ClearDB(){
-	if (!db_open(DB_PATH, &db))
-	{
-		/*
-			"CREATE TABLE IF NOT EXISTS timestamps (Id integer PRIMARY KEY, datetime integer, sendGS BOOL, sendAD BOOL);");
-			"CREATE TABLE IF NOT EXISTS measBME    (Id integer PRIMARY KEY, temp REAL, press REAL, humid REAL);");
-			"CREATE TABLE IF NOT EXISTS measPMS    (Id integer PRIMARY KEY, PM010 REAL, PM025 REAL, PM100 REAL);");
-			"CREATE TABLE IF NOT EXISTS measSDS    (Id integer PRIMARY KEY, PM025 REAL, PM100 REAL);");
-			"CREATE TABLE IF NOT EXISTS measGPS    (Id integer PRIMARY KEY, lat REAL, lon REAL);");
-		*/
 
-		String query = "";
+	xSemaphoreTake(SQL_mutex, portMAX_DELAY);
+	xSemaphoreTake(I2C_mutex, portMAX_DELAY);
 
-		query   = "DELETE FROM measBME;";
-		rc = db_exec(db, query.c_str());
-		if (rc != SQLITE_OK) {
-			debug_out(F("ClearDB: measBME not updated"),			DEBUG_ERROR, 1);
+
+
+	if(SD.exists(DB_FILE)){
+		debug_out(F("DB file exists"),									DEBUG_ALWAYS, 1);
+
+		if(SD.remove(DB_FILE)){
+			debug_out(F("DB file deleted"),								DEBUG_ALWAYS, 1);
 		}
-		vTaskDelay(50);  // one tick delay (1ms) in between reads for stability
 
+		vTaskDelay(500);  // one tick delay (1ms) in between reads for stability
 
-		query  += "DELETE FROM measSDS;";
-		rc = db_exec(db, query.c_str());
-		if (rc != SQLITE_OK) {
-			debug_out(F("ClearDB: measSDS not updated"),			DEBUG_ERROR, 1);
-		}
-		vTaskDelay(50);  // one tick delay (1ms) in between reads for stability
+		SD.end();
+		display.clear();
+		display.displayOff();
+		display.end();
 
+		vTaskDelay(500);  // one tick delay (1ms) in between reads for stability
 
-		query  += "DELETE FROM measPMS;";
-		rc = db_exec(db, query.c_str());
-		if (rc != SQLITE_OK) {
-			debug_out(F("ClearDB: measPMS not updated"),			DEBUG_ERROR, 1);
-		}
-		vTaskDelay(50);  // one tick delay (1ms) in between reads for stability
+		ESP.restart();
 
-
-		query  += "DELETE FROM measGPS;";
-		rc = db_exec(db, query.c_str());
-		if (rc != SQLITE_OK) {
-			debug_out(F("ClearDB: measGPS not updated"),			DEBUG_ERROR, 1);
-		}
-		vTaskDelay(50);  // one tick delay (1ms) in between reads for stability
-
-
-		query  += "DELETE FROM timestamps;";
-		rc = db_exec(db, query.c_str());
-		if (rc != SQLITE_OK) {
-			debug_out(F("ClearDB: timestamps not updated"),			DEBUG_ERROR, 1);
-		}
-		vTaskDelay(50);  // one tick delay (1ms) in between reads for stability
-
-		rec_count = 0;
-
-		sqlite3_close(db);
 	}
-	else{
-		debug_out(F("ClearDB: DB opening error."),				DEBUG_ERROR, 1);
+	else {
+		debug_out(F("DB file not exists"),								DEBUG_ALWAYS, 1);
 	}
-	vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
 
-	ESP.restart();
+	xSemaphoreGive(I2C_mutex);
+	xSemaphoreGive(SQL_mutex);
+
 }
 
 #endif

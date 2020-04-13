@@ -25,7 +25,7 @@
 	// Wieviele Informationen sollenber die serielle Schnittstelle ausgegeben werden?
 	#define DEBUG DEBUG_MIN_INFO
 
-	#define OSM_API_ENDPOINT "ingress.osem.vo1d.space"
+	#define OSM_API_ENDPOINT "ingress.opensensemap.org"				//"ingress.osem.vo1d.space"
 
 
 	// Initial configuration settings ***********
