@@ -12,3 +12,9 @@ Original stationary station from opendata-stuttgart works well out my window for
 
 Referenced libraryes and projects
 https://github.com/noerw/mobile-sensebox
+
+
+OpenSenseMap registration tutorial
+https://sensebox.github.io/books-v2/home/en/erste-schritte/registrierung-auf-der-openSenseMap.html
+* senseBox:edu
+* 
