@@ -101,7 +101,7 @@
 #endif
 
 #include "Definitions.h"
-#include "Credentials.h"
+#include "Credentials.h" // Use 'Credentials_template.h' file as template
 #include "Sensors.h"
 #include <rom/rtc.h>
 #include "api.h"
@@ -184,6 +184,11 @@ bool BUT_B_PRESS=false;
 bool BUT_C_PRESS=false;
 
 bool BUT_DB_CLEAR_FLAG=false;
+
+RecMode	Mode = RecMode::NoGPS;		// default mode without GPS
+
+bool inWindow = false;				// Check if sensor is in anonimizing rectangle coordinates
+
 
 PMmeas SDSmeasPM025;
 PMmeas SDSmeasPM100;
@@ -788,84 +793,86 @@ void loop()
 							debug_out(data, 																		DEBUG_MED_INFO, 1);
 						}
 						if(OSdata){
+							if(GPS_lat.length() > 3 && GPS_lon.length()>3){
 
-							time_t TStamp;
-							TStamp = DateTime.toInt();
+								time_t TStamp;
+								TStamp = DateTime.toInt();
 
-							TStamp -= 3600*3;
-							// TODO!! TStamp correction should depends on dayLight save period
+								TStamp -= 3600*3;
+								// TODO!! TStamp correction should depends on dayLight save period
 
-							struct tm timeinfo;
-							localtime_r(&TStamp, &timeinfo);
-							if(timeinfo.tm_year > (2016 - 1900)){
-								char timeStringBuff[50]; //50 chars should be enough
-								strftime(timeStringBuff, sizeof(timeStringBuff), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);	//"%04d-%02d-%02dT%02d:%02d:%02dZ"
+								struct tm timeinfo;
+								localtime_r(&TStamp, &timeinfo);
+								if(timeinfo.tm_year > (2016 - 1900)){
+									char timeStringBuff[50]; //50 chars should be enough
+									strftime(timeStringBuff, sizeof(timeStringBuff), "%Y-%m-%dT%H:%M:%SZ", &timeinfo);	//"%04d-%02d-%02dT%02d:%02d:%02dZ"
 
-								String TimeStamp(timeStringBuff);
+									String TimeStamp(timeStringBuff);
 
-								//TimeStamp = TimeStamp.substring(0, TimeStamp.length() - 2);
-								//TimeStamp += ":00";
-
-								GPS_lat = "47.81";	// anonimizer
-								GPS_lon = "35.10";	// anonimizer
+									//TimeStamp = TimeStamp.substring(0, TimeStamp.length() - 2);
+									//TimeStamp += ":00";
 
 
-								// Take out AVG values
-								BME280_P			=	StrSplitItem(BME280_P, ':', 2);
-								BME280_T			=	StrSplitItem(BME280_T, ':', 2);
-								BME280_H			=	StrSplitItem(BME280_H, ':', 2);
+									// Take out AVG values
+									BME280_P			=	StrSplitItem(BME280_P, ':', 2);
+									BME280_T			=	StrSplitItem(BME280_T, ':', 2);
+									BME280_H			=	StrSplitItem(BME280_H, ':', 2);
 
-								SDS_100				=	StrSplitItem(SDS_100, ':', 2);
-								SDS_025				=	StrSplitItem(SDS_025, ':', 2);
+									SDS_100				=	StrSplitItem(SDS_100, ':', 2);
+									SDS_025				=	StrSplitItem(SDS_025, ':', 2);
 
-								PMS_100				=	StrSplitItem(PMS_100, ':', 2);
-								PMS_025				=	StrSplitItem(PMS_025, ':', 2);
-								PMS_010				=	StrSplitItem(PMS_010, ':', 2);
+									PMS_100				=	StrSplitItem(PMS_100, ':', 2);
+									PMS_025				=	StrSplitItem(PMS_025, ':', 2);
+									PMS_010				=	StrSplitItem(PMS_010, ':', 2);
 
-								// Prepare JSON packages
-								SDS_100  = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, SDS_100);
-								SDS_025  = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, SDS_025);
-								PMS_100  = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, PMS_100);
-								PMS_025  = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, PMS_025);
-								PMS_010  = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, PMS_010);
-								BME280_P = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, BME280_P);
-								BME280_T = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, BME280_T);
-								BME280_H = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, BME280_H);
+									// Prepare JSON packages
+									SDS_100  = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, SDS_100);
+									SDS_025  = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, SDS_025);
+									PMS_100  = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, PMS_100);
+									PMS_025  = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, PMS_025);
+									PMS_010  = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, PMS_010);
+									BME280_P = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, BME280_P);
+									BME280_T = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, BME280_T);
+									BME280_H = ValueLocated2Json(TimeStamp, GPS_lat, GPS_lon, BME280_H);
 
-								TEMP2	= "{\"sensor\":\"" + String(ID_SENSOR_SDS_100) + "\" , ";
-								SDS_100.replace("{", TEMP2);
+									TEMP2	= "{\"sensor\":\"" + String(ID_SENSOR_SDS_100) + "\" , ";
+									SDS_100.replace("{", TEMP2);
 
-								TEMP2	= "{\"sensor\":\"" + String(ID_SENSOR_SDS_025) + "\" , ";
-								SDS_025.replace("{", TEMP2);
+									TEMP2	= "{\"sensor\":\"" + String(ID_SENSOR_SDS_025) + "\" , ";
+									SDS_025.replace("{", TEMP2);
 
-								TEMP2	= "{\"sensor\":\"" + String(ID_SENSOR_PMS_100) + "\" , ";
-								PMS_100.replace("{", TEMP2);
+									TEMP2	= "{\"sensor\":\"" + String(ID_SENSOR_PMS_100) + "\" , ";
+									PMS_100.replace("{", TEMP2);
 
-								TEMP2	= "{\"sensor\":\"" + String(ID_SENSOR_PMS_025) + "\" , ";
-								PMS_025.replace("{", TEMP2);
+									TEMP2	= "{\"sensor\":\"" + String(ID_SENSOR_PMS_025) + "\" , ";
+									PMS_025.replace("{", TEMP2);
 
-								TEMP2	= "{\"sensor\":\"" + String(ID_SENSOR_PRESS) + "\" , ";
-								BME280_P.replace("{", TEMP2);
+									TEMP2	= "{\"sensor\":\"" + String(ID_SENSOR_PRESS) + "\" , ";
+									BME280_P.replace("{", TEMP2);
 
-								TEMP2	= "{\"sensor\":\"" + String(ID_SENSOR_TEMP) + "\" , ";
-								BME280_T.replace("{", TEMP2);
+									TEMP2	= "{\"sensor\":\"" + String(ID_SENSOR_TEMP) + "\" , ";
+									BME280_T.replace("{", TEMP2);
 
-								TEMP2	= "{\"sensor\":\"" + String(ID_SENSOR_HUMID) + "\" , ";
-								BME280_H.replace("{", TEMP2);
+									TEMP2	= "{\"sensor\":\"" + String(ID_SENSOR_HUMID) + "\" , ";
+									BME280_H.replace("{", TEMP2);
 
-								dataOSM  = "[";
-								dataOSM +=  SDS_100 + ",";
-								dataOSM +=  SDS_025 + ",";
-								dataOSM +=  PMS_100 + ",";
-								dataOSM +=  PMS_025 + ",";
-								dataOSM += BME280_P + ",";
-								dataOSM += BME280_T + ",";
-								dataOSM += BME280_H;
-								dataOSM += "]";
+									dataOSM  = "[";
+									dataOSM +=  SDS_100 + ",";
+									dataOSM +=  SDS_025 + ",";
+									dataOSM +=  PMS_100 + ",";
+									dataOSM +=  PMS_025 + ",";
+									dataOSM += BME280_P + ",";
+									dataOSM += BME280_T + ",";
+									dataOSM += BME280_H;
+									dataOSM += "]";
 
+								}
+								else{
+									OSsavedone = true; // no need to transfer data, just mark it out as done
+								}
 							}
-							else{
-								OSdata = false;
+							else {
+								OSsavedone = true; // no need to transfer data, just mark it out as done
 							}
 						}
 					}
@@ -935,7 +942,7 @@ void loop()
 
 			debug_out(F("WWW: Client object deleted"), 											DEBUG_MED_INFO, 1);
 		}
-		if(OSdata){
+		if(OSdata && !OSsavedone){
 			debug_out(F("OsemApi: Transfer start"), 											DEBUG_MED_INFO, 1);
 
 			// Send to opensensemap
@@ -1306,6 +1313,7 @@ void TaskKeyboard(void *pvParameters)  // This is a task.
 	if (BUT_B && !BUT_B_PRESS)
 	{
 		debug_out(F("Button Mid"), 		DEBUG_WARNING, 1);
+		xTaskNotifyGive(xTaskDisplay_handle);
 	}
 
 	if (BUT_C && !BUT_C_PRESS)
@@ -1377,6 +1385,7 @@ void display_values() {
 	int screens[9];
 	int screen_count = 0;
 
+	screens[screen_count++] = 9;		// Record mode select screen
 
 	if (cfg::pms_read || cfg::sds_read ) {
 		screens[screen_count++] = 1;
@@ -1394,7 +1403,7 @@ void display_values() {
 	screens[screen_count++] = 11;	// Trend, GPS, Values
 
 	if(next_display_count<0){		// Fix bug with previous display of 0 screen
-		next_display_count = screen_count;
+		next_display_count = screen_count-1;
 	}
 
 	switch (screens[next_display_count % screen_count]) {
@@ -1445,6 +1454,23 @@ void display_values() {
 		}
 
 		break;
+
+	case (9):
+
+		if(BUT_B_PRESS){
+			//Mode++;
+			Mode = (Mode == RecMode::GPS_Slow) ? RecMode::NoGPS : static_cast<RecMode>(static_cast<int>(Mode)+1);
+		}
+
+		display_header = F("Mode");
+		display_lines[0] = "                NORM    SLOW";
+		display_lines[1] = "No GPS        "     + String(Mode == RecMode::NoGPS? "x  ":"o  ")+ String(Mode == RecMode::NoGPS_Slow? "          x":"          o");
+		display_lines[2] = "     GPS        "   + String(Mode == RecMode::GPS  ? "x  ":"o  ")+ String(Mode == RecMode::GPS_Slow  ? "          x":"          o");
+
+		break;
+
+
+
 	case (11):
 		display_header = "Measurements";
 
@@ -1458,8 +1484,28 @@ void display_values() {
 	if(screens[next_display_count % screen_count] < 10){
 		display.setTextAlignment(TEXT_ALIGN_LEFT);
 
-		//display.drawString(60, 0, printLocalTime("%Y %m %d %H:%M:%S"));
+		String StMode = "";
+		switch (Mode) {
+		case (RecMode::NoGPS):
+			StMode = "N";
+			break;
+		case (RecMode::NoGPS_Slow):
+			StMode = "N+";
+			break;
+		case (RecMode::GPS):
+			StMode = "G";
+			break;
+		case (RecMode::GPS_Slow):
+			StMode = "G+";
+			break;
+		}
+
 		display.drawString(100, 0, printLocalTime("%H:%M"));
+		display.drawString(80,  0, StMode);
+
+		if(inWindow){
+			display.drawString(65,  0, "[H]");
+		}
 
 		display.drawString(0,  0, display_header);
 		display.drawString(0, 13, display_lines[0]);
@@ -1585,10 +1631,20 @@ void sensorGPS() {
 			if (gps.location.isValid()) {
 				last_value_GPS_lat = gps.location.lat();
 				last_value_GPS_lon = gps.location.lng();
+
+				inWindow  = last_value_GPS_lat < max(GPS_HOME_LAT_1,GPS_HOME_LAT_2);
+				inWindow &= last_value_GPS_lat > min(GPS_HOME_LAT_1,GPS_HOME_LAT_2);
+				inWindow &= last_value_GPS_lon < max(GPS_HOME_LON_1,GPS_HOME_LON_2);
+				inWindow &= last_value_GPS_lon > min(GPS_HOME_LON_1,GPS_HOME_LON_2);
+
 			} else {
 				last_value_GPS_lat = GPS_UNDEF;
 				last_value_GPS_lon = GPS_UNDEF;
 				debug_out(F("Lat/Lng INVALID"), DEBUG_MAX_INFO, 1);
+
+				inWindow = false;
+
+
 			}
 			if (gps.altitude.isValid()) {
 				last_value_GPS_alt = gps.altitude.meters();
@@ -1788,16 +1844,18 @@ void Store2DB(){
 				}
 
 #ifdef CFG_GPS
+				// Store GPS only if its alive and enabled by RecordMode selected
+				if(last_value_GPS_lat != GPS_UNDEF && (Mode==RecMode::GPS || Mode==RecMode::GPS_Slow )){
 
-				if(last_value_GPS_lat != GPS_UNDEF){
+					if(!inWindow){
+						query  = "INSERT INTO measGPS (Id, lat, lon) VALUES ('" + String((int)RID) + "',";
+						query += Float2String(last_value_GPS_lat) + ",";
+						query += Float2String(last_value_GPS_lon) + ")";
 
-					query  = "INSERT INTO measGPS (Id, lat, lon) VALUES ('" + String((int)RID) + "',";
-					query += Float2String(last_value_GPS_lat) + ",";
-					query += Float2String(last_value_GPS_lon) + ")";
-
-					rc = db_exec(db, query.c_str());
-					if (rc != SQLITE_OK) {
-						debug_out(F("Table 'measGPS' not updated"),			DEBUG_ERROR, 1);
+						rc = db_exec(db, query.c_str());
+						if (rc != SQLITE_OK) {
+							debug_out(F("Table 'measGPS' not updated"),			DEBUG_ERROR, 1);
+						}
 					}
 				}
 

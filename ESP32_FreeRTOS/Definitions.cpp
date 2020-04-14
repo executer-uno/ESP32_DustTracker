@@ -312,3 +312,11 @@ void setTimeZone(long offset, int daylight)
 	debug_out("setTimeZone: " + String(tz),										DEBUG_MAX_INFO, 1);
 
 }
+
+RecMode& operator++(RecMode& d) {
+    return d = (d == RecMode::GPS_Slow) ? RecMode::NoGPS : static_cast<RecMode>(static_cast<int>(d)+1);
+}
+
+RecMode& operator--(RecMode& d) {
+    return d = (d == RecMode::NoGPS) ? RecMode::GPS_Slow : static_cast<RecMode>(static_cast<int>(d)-1);
+}

@@ -69,9 +69,21 @@
 	#define I2C_PIN_SCL OLED_SCL
 	#define I2C_PIN_SDA OLED_SDA
 
-	#define	GPS_UNDEF -200.0
+	#define	GPS_UNDEF -999.0
 
 	#define SOFTWARE_VERSION "PORT2XBMEGPS01"
+
+
+
+	enum class RecMode {
+		NoGPS,				// no GPS record
+		GPS,				// GPS records
+		NoGPS_Slow,			// Slow collection with no GPS data
+		GPS_Slow			// Slow collection with GPS data recording
+	};
+
+	RecMode& operator++(RecMode& d);
+	RecMode& operator--(RecMode& d);
 
 	enum class SensorSt {
 		raw,
