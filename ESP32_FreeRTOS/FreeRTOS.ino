@@ -251,8 +251,29 @@ void setup() {
 	pinMode(BUT_2, INPUT_PULLUP);
 	pinMode(BUT_3, INPUT_PULLUP);
 
+
+	#ifdef CFG_LCD
+		/*****************************************************************
+		 * Init OLED display																						 *
+		 *****************************************************************/
+		display.init();
+		display.displayOff();
+	#endif
+
+
+	esp_sleep_enable_timer_wakeup(100*1000);
+
+	// wait for button click before startup
+	while(digitalRead(BUT_1) && digitalRead(BUT_2) && digitalRead(BUT_3)){
+		vTaskDelay(5); // one tick delay (1ms) in between reads for stability
+
+		esp_light_sleep_start();
+	}
+
  	// initialize digital LED_BUILTIN as an output.
 	pinMode(LED_BUILTIN, OUTPUT);
+	digitalWrite(LED_BUILTIN, HIGH);    // turn the LED ON by making the voltage HIGH
+	vTaskDelay(1000); // one tick delay (1ms) in between reads for stability
 
 
 	char MAC_chars[15]; //Create a Unique AP from MAC address
@@ -283,10 +304,9 @@ void setup() {
 
 	#ifdef CFG_LCD
 		/*****************************************************************
-		 * Init OLED display																						 *
+		 * Turn on OLED display																						 *
 		 *****************************************************************/
-		display.init();
-		//display.mirrorScreen();
+
 		display.flipScreenVertically();
 
 		// Boot screen
@@ -309,10 +329,9 @@ void setup() {
 	for(int del=0; del<42; del++){
 
 		digitalWrite(LED_BUILTIN, HIGH);    // turn the LED ON by making the voltage HIGH
-		delay(100);
-		yield();
+		vTaskDelay(100); // one tick delay (1ms) in between reads for stability
 		digitalWrite(LED_BUILTIN, LOW );
-		delay(100);
+		vTaskDelay(100); // one tick delay (1ms) in between reads for stability
 		progress += " .";
 
 		#ifdef CFG_LCD
