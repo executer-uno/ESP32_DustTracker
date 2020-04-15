@@ -1,5 +1,5 @@
 # ESP32 DustTracker
-*Particle matter double sensors and air phisical parameters tracker with GPS coordinates, with small display and SQLite data base buffer on SD card and WiFi data upload to Google Spreadsheets and OpenSenseMap services*
+*Particle matter double sensors and air phisical parameters tracker with GPS coordinates, with small display and SQLite data base buffer on SD card and WiFi data upload to Google Spreadsheets and OpenSenseMap services. And its done Sloeber IDE, proper IDE to work with Arduino-based projects ;-)*
 
 Software highlights:
 ---
@@ -26,6 +26,9 @@ General information page https://aqicn.org/sensor/. That type of laser sensors n
 * BME280 sensor
 
 Provides Humidity, Temperature and precise pressure for logging
+* Sloeber IDE
+
+Perfect tool I was looking for. I was trying to modify opendata-stuttgart project in Arduino IDE, but it is completly useless. Wery glad to find Sloeber, all libraryes available and all testy things of real IDE. No problems with Arduino tutorials, all functions are available.
 
 Schematics:
 ------------------------
