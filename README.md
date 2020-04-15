@@ -14,7 +14,13 @@ Referenced libraryes and projects
 https://github.com/noerw/mobile-sensebox
 
 
-OpenSenseMap registration tutorial
+OpenSenseMap (OSM) service
+---------------------------------
+One of the two used data upload services. It is a public one, so, for privacy sensor record mode implemented to choose to record position or to not. OSM data uploads only for records with GPS coordinates available.
+Service registration tutorial:
 https://sensebox.github.io/books-v2/home/en/erste-schritte/registrierung-auf-der-openSenseMap.html
-* senseBox:edu
-* 
+1) For new box choose "senseBox:edu" as a template and drop number of sensors you need as a templates 
+2) Edit phenomens and sensors descriptions to match with your real data
+3) Its ready, it should be a Arduino project sent to your e-mail, I use it as a template and modify for batch data upload.
+Very helpful OpenStreetMap API reference for batch data upload. One-by-one measurement overloads connection from server side:
+https://docs.opensensemap.org/#api-Measurements-postNewMeasurements
