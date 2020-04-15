@@ -24,3 +24,7 @@ https://sensebox.github.io/books-v2/home/en/erste-schritte/registrierung-auf-der
 3) Its ready, it should be a Arduino project sent to your e-mail, I use it as a template and modify for batch data upload.
 Very helpful OpenStreetMap API reference for batch data upload. One-by-one measurement overloads connection from server side:
 https://docs.opensensemap.org/#api-Measurements-postNewMeasurements
+
+Google Sheets data upload
+---------------------------
+It is a second, private, data upload destination. Many thanks for https://github.com/electronicsguy/ESP8266/tree/master/HTTPSRedirect project, with example project and detailed description it was easy to upload data to private SpreadSheet without any 3rd party services. Peace of cake!
