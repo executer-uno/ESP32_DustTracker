@@ -1,5 +1,6 @@
 # ESP32 DustTracker
 *Particle matter double sensors and air phisical parameters tracker with GPS coordinates, with small display and SQLite data base buffer on SD card and WiFi data upload to Google Spreadsheets and OpenSenseMap services*
+
 Software highlights:
 ---
 * ESP32 with FreeRTOS threads
