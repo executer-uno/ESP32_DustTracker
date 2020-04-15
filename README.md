@@ -61,3 +61,16 @@ https://docs.opensensemap.org/#api-Measurements-postNewMeasurements
 Google Sheets data upload
 ---------------------------
 It is a second, private, data upload destination. Many thanks for https://github.com/electronicsguy/ESP8266/tree/master/HTTPSRedirect project, with example project and detailed description it was easy to upload data to private SpreadSheet without any 3rd party services. Peace of cake!
+
+
+Installation references
+==
+
+Official [manual](http://eclipse.baeyens.it/stable.php?OS=Windows) I used. Easy Bundle setup for clear system.
+
+In Project settings need to extra define following key, to disable built-in Serial object (https://github.com/executer-uno/ESP32_DustTracker/blob/master/SW_Serial%20to%20USB.png)
+
+Sloeber usually detects all libs by itself, but here is a my working list: (https://github.com/executer-uno/ESP32_DustTracker/blob/master/Libraryes.png). Double check that FreeRTOS is unselected. It is already in ESP32 module and library.
+
+Just in case, mu JSON references, just standard ESP references added (https://github.com/executer-uno/ESP32_DustTracker/blob/master/JSON%20references.png)
+
