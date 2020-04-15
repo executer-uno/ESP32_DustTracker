@@ -11,10 +11,12 @@ Basic opendata-stuttgart project was done on ESP8266 chip, with no OS usage. Mai
 To make it portable some data buffer required. For easy data store and acess and modification SQLite library was used. Works like a charm. 
 * SoftwareSerial for debug output
 
-All 3 available hardware UARTs used for sensors communication. Some time Bluetooth was used as a fourth debug USART, but some moment it appears that it wery hungry for RAM in Arduino libraryes, so switched back to SoftwareSerial for debug port. It brokes characters time to time, but its better than nothing. 
+All 3 available hardware UARTs used for sensors communication. Some time Bluetooth was used as a fourth debug USART, but some moment it appears that it wery hungry for RAM in Arduino libraryes, so switched back to SoftwareSerial for debug port. It brokes characters time to time, but its better than nothing.
+ESP32 SoftwareSerial was little bit reconfigured to be able to use build-in USB-UART adapter pins (https://github.com/plerup/espsoftwareserial/pull/134#issue-364533170)
+
 * HTTPS Redirect library
 
-Google spreadsheets used that protocol to upload data
+Google spreadsheets used that protocol to upload data. Most complicate library as for me)
 * TinyGPS++ for NEO6M sensor
 
 All GPS processing was provided by opendata-stuttgart basic project
@@ -29,13 +31,16 @@ Schematics:
 ------------------------
 https://easyeda.com/executer/ESP32_PMS_GPS_Portable
 
+
+Referenced libraryes and projects
+---
+
 Base project:
 https://github.com/opendata-stuttgart/sensors-software/tree/master/airrohr-firmware
 
-Its codebase was most used but, changed a lot, becouse mine it is a portable, mobile station.
-Original stationary station from opendata-stuttgart works well out my window for a year, very robust!
+Its codebase was most used but, changed a lot, becouse that project is a portable, mobile station.
+Original stationary station from opendata-stuttgart works well out of my window for a year, very robust!
 
-Referenced libraryes and projects
 https://github.com/noerw/mobile-sensebox
 
 
