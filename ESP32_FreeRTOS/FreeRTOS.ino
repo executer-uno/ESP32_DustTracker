@@ -1849,8 +1849,8 @@ void Store2DB(){
 
 					if(!inWindow){
 						query  = "INSERT INTO measGPS (Id, lat, lon) VALUES ('" + String((int)RID) + "',";
-						query += Float2String(last_value_GPS_lat) + ",";
-						query += Float2String(last_value_GPS_lon) + ")";
+						query += Float2String(last_value_GPS_lat, 4) + ",";
+						query += Float2String(last_value_GPS_lon, 4) + ")";
 
 						rc = db_exec(db, query.c_str());
 						if (rc != SQLITE_OK) {
