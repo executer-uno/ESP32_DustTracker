@@ -6,7 +6,7 @@ Software highlights:
 * ESP32 with FreeRTOS threads
 
 Basic opendata-stuttgart project was done on ESP8266 chip, with no OS usage. Main thing to move to ESP32 was 3 hardware UART available, more IO pins for SD card support and enough RAM for SQLite and trouble free engineering.
-* SQLite on DS card
+* SQLite on SD card
 
 To make it portable some data buffer required. For easy data store and acess and modification SQLite library was used. Works like a charm. 
 * SoftwareSerial for debug output
@@ -41,7 +41,7 @@ Referenced libraryes and projects
 Base project:
 https://github.com/opendata-stuttgart/sensors-software/tree/master/airrohr-firmware
 
-Its codebase was most used but, changed a lot, becouse that project is a portable, mobile station.
+Its codebase was most used but, changed a lot, because that project is a portable, mobile station.
 Original stationary station from opendata-stuttgart works well out of my window for a year, very robust!
 
 https://github.com/noerw/mobile-sensebox
