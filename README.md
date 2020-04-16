@@ -77,5 +77,5 @@ Sloeber usually detects all libs by itself, but here is a my working list:
 Just in case, mu JSON references, just standard ESP references added
 ![JSON](https://github.com/executer-uno/ESP32_DustTracker/blob/master/JSON%20references.png)
 
-My board configuration
+My board's configuration
 ![boardCFG](https://github.com/executer-uno/ESP32_DustTracker/blob/master/BoardConfig.png)
