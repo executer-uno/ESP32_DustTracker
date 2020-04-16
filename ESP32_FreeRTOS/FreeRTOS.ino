@@ -1380,7 +1380,6 @@ static String displayGenerateFooter(unsigned int screen_count) {
 void display_values() {
 
 	String display_header = "";
-	String display_lines[4] = { "", "", "", ""};
 
 	int screens[9];
 	int screen_count = 0;
@@ -1394,9 +1393,12 @@ void display_values() {
 	if (cfg::bme280_read) {
 		screens[screen_count++] = 3;
 	}
+
+	#ifdef CFG_GPS
 	if (cfg::gps_read) {
 		screens[screen_count++] = 4;
 	}
+	#endif
 
 	screens[screen_count++] = 5;	// Wifi info
 	screens[screen_count++] = 6;	// chipID, firmware and count of measurements
@@ -1406,48 +1408,107 @@ void display_values() {
 		next_display_count = screen_count-1;
 	}
 
+
+	xSemaphoreTake(I2C_mutex, portMAX_DELAY);
+	display.clear();
+	display.displayOn();
+
 	switch (screens[next_display_count % screen_count]) {
 
 	case (1):
 		display_header =  F("PM (µg/m³)");
-		display_lines[0] = "PM  0.1:  "  + check_display_value(PMSmeasPM010.ArchMeas.avg[0], -1.0, 1, 6);
-		display_lines[1] = "PM  2.5:  "  + check_display_value(PMSmeasPM025.ArchMeas.avg[0], -1.0, 1, 6) + "  ;" + check_display_value(SDSmeasPM025.ArchMeas.avg[0], -1.0, 1, 6);
-		display_lines[2] = "PM 10.0:  "  + check_display_value(PMSmeasPM100.ArchMeas.avg[0], -1.0, 1, 6) + "  ;" + check_display_value(SDSmeasPM100.ArchMeas.avg[0], -1.0, 1, 6);
+
+		display.setTextAlignment(TEXT_ALIGN_RIGHT);
+		display.drawString(50, 13, "PM 0.1:");
+		display.drawString(50, 25, "PM 2.5:");
+		display.drawString(50, 37, "PM 10.0:");
+
+		display.setTextAlignment(TEXT_ALIGN_LEFT);
+		display.drawString(55, 13, check_display_value(PMSmeasPM010.ArchMeas.avg[0], -1.0, 1, 6));
+		display.drawString(55, 25, check_display_value(PMSmeasPM025.ArchMeas.avg[0], -1.0, 1, 6));
+		display.drawString(55, 37, check_display_value(PMSmeasPM100.ArchMeas.avg[0], -1.0, 1, 6));
+
+		display.drawString(85, 13, ";");
+		display.drawString(85, 25, ";");
+		display.drawString(85, 37, ";");
+
+		display.drawString(90, 25, check_display_value(SDSmeasPM025.ArchMeas.avg[0], -1.0, 1, 6));
+		display.drawString(90, 37, check_display_value(SDSmeasPM100.ArchMeas.avg[0], -1.0, 1, 6));
+
 		break;
 
 	case (3):
 		display_header = F("Air");
-		display_lines[0] = "Temp.: " + check_display_value(BMEmeasT.ArchMeas.avg[0] , -1.0				, 1, 6) + " °C";
-		display_lines[1] = "Hum.:  " + check_display_value(BMEmeasH.ArchMeas.avg[0] , -1.0				, 1, 6) + " %";
-		display_lines[2] = "Pres.: " + check_display_value(BMEmeasP.ArchMeas.avg[0]  / 100, (-1 / 100.0), 1, 6) + " hPa";
-		break;
-	case (4):
-		display_header = F("GPS");
-#ifdef CFG_GPS
-		display_lines[0] = "Lat:  " + check_display_value(last_value_GPS_lat , GPS_UNDEF, 6, 10);
-		display_lines[1] = "Lon:  " + check_display_value(last_value_GPS_lon , GPS_UNDEF, 6, 10);
-		display_lines[2] = "Alt:  " + check_display_value(last_value_GPS_alt , GPS_UNDEF, 6, 10);
-#else
-		display_lines[0] = "Lat: ";
-		display_lines[1] = "Lon: ";
-		display_lines[2] = "Alt: ";
-#endif
+
+		display.setTextAlignment(TEXT_ALIGN_RIGHT);
+		display.drawString(40, 13, "Temp.:");
+		display.drawString(40, 25, "Hum.:");
+		display.drawString(40, 37, "Pres.:");
+
+		display.drawString(95, 13, check_display_value(BMEmeasT.ArchMeas.avg[0] , -1.0				, 1, 6));
+		display.drawString(95, 25, check_display_value(BMEmeasH.ArchMeas.avg[0] , -1.0				, 1, 6));
+		display.drawString(95, 37, check_display_value(BMEmeasP.ArchMeas.avg[0]  / 100, (-1 / 100.0), 1, 6));
+
+		display.setTextAlignment(TEXT_ALIGN_LEFT);
+		display.drawString(100, 13, "°C");
+		display.drawString(100, 25, "%");
+		display.drawString(100, 37, "hPa");
 
 		break;
+
+	case (4):
+		display_header = F("GPS");
+
+		display.setTextAlignment(TEXT_ALIGN_RIGHT);
+		display.drawString(40, 13, "Lat:");
+		display.drawString(40, 25, "Lon:");
+		display.drawString(40, 37, "Alt:");
+
+		display.drawString(100, 13, check_display_value(last_value_GPS_lat , GPS_UNDEF, 6, 10));
+		display.drawString(100, 25, check_display_value(last_value_GPS_lon , GPS_UNDEF, 6, 10));
+		display.drawString(100, 37, check_display_value(last_value_GPS_alt , GPS_UNDEF, 2, 10));
+
+		break;
+
 	case (5):
 		display_header = F("Stack free");
 
-		display_lines[0] = "Blink" + check_display_value(uxHighWaterMark_TaskBlink			, 0, 0, 6) + "    Sens" + check_display_value(uxHighWaterMark_TaskReadSensors	, 0, 0, 6);
-		display_lines[1] = "Diag " + check_display_value(uxHighWaterMark_TaskDiagLevel		, 0, 0, 6) + "    Keyb" + check_display_value(uxHighWaterMark_TaskKeyboard	, 0, 0, 6);
-		display_lines[2] = "Arch " + check_display_value(uxHighWaterMark_TaskArchiveMeas	, 0, 0, 6) + "    Disp" + check_display_value(uxHighWaterMark_TaskDisplay		, 0, 0, 6);
-		display_lines[3] = "WiFi " + check_display_value(uxHighWaterMark_TaskWiFi			, 0, 0, 6);
+		display.setTextAlignment(TEXT_ALIGN_RIGHT);
+		display.drawString(25, 13, "Blink");
+		display.drawString(25, 25, "Diag");
+		display.drawString(25, 37, "Arch");
+		display.drawString(25, 49, "WiFi");
+
+		display.drawString(60, 13, check_display_value(uxHighWaterMark_TaskBlink		, 0, 0, 6)+";");
+		display.drawString(60, 25, check_display_value(uxHighWaterMark_TaskDiagLevel	, 0, 0, 6)+";");
+		display.drawString(60, 37, check_display_value(uxHighWaterMark_TaskArchiveMeas	, 0, 0, 6)+";");
+		display.drawString(60, 49, check_display_value(uxHighWaterMark_TaskWiFi			, 0, 0, 6)+";");
+
+		display.drawString(90, 13, "Sens");
+		display.drawString(90, 25, "Keyb");
+		display.drawString(90, 37, "Disp");
+		display.drawString(90, 49, "");
+
+		display.drawString(125, 13, check_display_value(uxHighWaterMark_TaskReadSensors	, 0, 0, 6));
+		display.drawString(125, 25, check_display_value(uxHighWaterMark_TaskKeyboard	, 0, 0, 6));
+		display.drawString(125, 37, check_display_value(uxHighWaterMark_TaskDisplay		, 0, 0, 6));
 
 		break;
 	case (6):
+
+
 		display_header = F("Info [M=CLR]");
-		display_lines[0] = "Recs:  "  + String(rec_count) + " RID: " 		+ String((int)RID);
-		display_lines[1] = "SSID:  "  + WiFi.SSID() + " (" + String(calcWiFiSignalQuality(WiFi.RSSI())) + "%)";
-		display_lines[2] = "IP:    "  + WiFi.localIP().toString();
+
+		display.setTextAlignment(TEXT_ALIGN_RIGHT);
+		display.drawString(30, 13, "Recs:");
+		display.drawString(30, 25, "SSID:");
+		display.drawString(30, 37, "IP:");
+
+		display.setTextAlignment(TEXT_ALIGN_LEFT);
+		display.drawString(40, 13, String(rec_count) + " RID: " 		+ String((int)RID));
+		display.drawString(40, 25, WiFi.SSID() + " (" + String(calcWiFiSignalQuality(WiFi.RSSI())) + "%");
+		display.drawString(40, 37, WiFi.localIP().toString());
+
 
 		if(BUT_B_PRESS){
 			BUT_DB_CLEAR_FLAG = true;
@@ -1463,13 +1524,21 @@ void display_values() {
 		}
 
 		display_header = F("Mode");
-		display_lines[0] = "                NORM    SLOW";
-		display_lines[1] = "No GPS        "     + String(Mode == RecMode::NoGPS? "x  ":"o  ")+ String(Mode == RecMode::NoGPS_Slow? "          x":"          o");
-		display_lines[2] = "     GPS        "   + String(Mode == RecMode::GPS  ? "x  ":"o  ")+ String(Mode == RecMode::GPS_Slow  ? "          x":"          o");
+
+		display.setTextAlignment(TEXT_ALIGN_RIGHT);
+		display.drawString(45, 25, "No GPS");
+		display.drawString(45, 37, "GPS");
+
+		display.setTextAlignment(TEXT_ALIGN_LEFT);
+		display.drawString(50, 13, "NORM    SLOW");
+
+		display.drawString(60, 25, String(Mode == RecMode::NoGPS? "O":""));
+		display.drawString(60, 37, String(Mode == RecMode::GPS  ? "O":""));
+
+		display.drawString(110, 25, String(Mode == RecMode::NoGPS_Slow? "O":""));
+		display.drawString(110, 37, String(Mode == RecMode::GPS_Slow  ? "O":""));
 
 		break;
-
-
 
 	case (11):
 		display_header = "Measurements";
@@ -1477,9 +1546,7 @@ void display_values() {
 		break;
 	}
 
-	xSemaphoreTake(I2C_mutex, portMAX_DELAY);
-	display.clear();
-	display.displayOn();
+
 
 	if(screens[next_display_count % screen_count] < 10){
 		display.setTextAlignment(TEXT_ALIGN_LEFT);
@@ -1493,10 +1560,20 @@ void display_values() {
 			StMode = "N+";
 			break;
 		case (RecMode::GPS):
-			StMode = "G";
+			if(last_value_GPS_lat == GPS_UNDEF){
+				StMode = "G";
+			}
+			else{
+				StMode = "[G]";
+			}
 			break;
 		case (RecMode::GPS_Slow):
-			StMode = "G+";
+			if(last_value_GPS_lat == GPS_UNDEF){
+				StMode = "G+";
+			}
+			else{
+				StMode = "[G+]";
+			}
 			break;
 		}
 
@@ -1504,16 +1581,14 @@ void display_values() {
 		display.drawString(80,  0, StMode);
 
 		if(inWindow){
-			display.drawString(65,  0, "[H]");
+			display.drawString(60,  0, "[H]");
 		}
 
 		display.drawString(0,  0, display_header);
-		display.drawString(0, 13, display_lines[0]);
-		display.drawString(0, 25, display_lines[1]);
-		display.drawString(0, 37, display_lines[2]);
+
 
 		if(screens[next_display_count % screen_count] == 5){
-			display.drawString(0, 49, display_lines[3]);
+
 		}
 		else{
 			display.setTextAlignment(TEXT_ALIGN_CENTER);
@@ -1655,6 +1730,15 @@ void sensorGPS() {
 			}
 		}
 	}
+
+	if(gps.location.age()>5000){
+
+		last_value_GPS_lat = GPS_UNDEF;
+		last_value_GPS_lon = GPS_UNDEF;
+		inWindow = false;
+
+	}
+
 
 	// gps.time.hour() resets Updated flag!
 	if(gps.time.isUpdated() && gps.time.isValid()){
@@ -1849,8 +1933,8 @@ void Store2DB(){
 
 					if(!inWindow){
 						query  = "INSERT INTO measGPS (Id, lat, lon) VALUES ('" + String((int)RID) + "',";
-						query += Float2String(last_value_GPS_lat, 4) + ",";
-						query += Float2String(last_value_GPS_lon, 4) + ")";
+						query += Float2String(last_value_GPS_lat, 6) + ",";
+						query += Float2String(last_value_GPS_lon, 6) + ")";
 
 						rc = db_exec(db, query.c_str());
 						if (rc != SQLITE_OK) {
