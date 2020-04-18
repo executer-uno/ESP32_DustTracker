@@ -106,6 +106,8 @@
 #include <rom/rtc.h>
 #include "api.h"
 
+#include "AQI_Calculation.h"
+
 // ***************************** Variables *********************************
 
 HardwareSerial 	serialSDS(1);
@@ -1384,6 +1386,8 @@ void display_values() {
 	int screens[9];
 	int screen_count = 0;
 
+	int AQI_value=0;
+
 	screens[screen_count++] = 9;		// Record mode select screen
 
 	if (cfg::pms_read || cfg::sds_read ) {
@@ -1416,12 +1420,15 @@ void display_values() {
 	switch (screens[next_display_count % screen_count]) {
 
 	case (1):
+
+
 		display_header =  F("PM (µg/m³)");
 
 		display.setTextAlignment(TEXT_ALIGN_RIGHT);
 		display.drawString(50, 13, "PM 0.1:");
 		display.drawString(50, 25, "PM 2.5:");
 		display.drawString(50, 37, "PM 10.0:");
+		display.drawString(50, 49, "AQI:");
 
 		display.setTextAlignment(TEXT_ALIGN_LEFT);
 		display.drawString(55, 13, check_display_value(PMSmeasPM010.ArchMeas.avg[0], -1.0, 1, 6));
@@ -1434,6 +1441,9 @@ void display_values() {
 
 		display.drawString(90, 25, check_display_value(SDSmeasPM025.ArchMeas.avg[0], -1.0, 1, 6));
 		display.drawString(90, 37, check_display_value(SDSmeasPM100.ArchMeas.avg[0], -1.0, 1, 6));
+
+		AQI_value = (int)max(getAQI( false, SDSmeasPM025.ArchMeas.avg[0] ),getAQI( true, SDSmeasPM100.ArchMeas.avg[0] ));
+		display.drawString(55, 49, AQI_value + " (" + updateAQIDisplay(AQI_value) + ")");
 
 		break;
 
@@ -1587,13 +1597,6 @@ void display_values() {
 		display.drawString(0,  0, display_header);
 
 
-		if(screens[next_display_count % screen_count] == 5){
-
-		}
-		else{
-			display.setTextAlignment(TEXT_ALIGN_CENTER);
-			display.drawString(64, 52, displayGenerateFooter(screen_count));
-		}
 	}
 	else{
 		for(int i=1; i<display.getWidth(); i++){
