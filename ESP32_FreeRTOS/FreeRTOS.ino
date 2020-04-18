@@ -1,3 +1,9 @@
+
+// Energu savings recomendations https://www.savjee.be/2019/12/esp32-tips-to-increase-battery-life/
+// And here https://randomnerdtutorials.com/esp32-timer-wake-up-deep-sleep/
+
+
+
 #if CONFIG_FREERTOS_UNICORE
 #define ARDUINO_RUNNING_CORE 0
 #else
@@ -42,7 +48,8 @@
 #endif
 
 #ifdef CFG_GSHEET
-	#include <WiFi.h>
+	#include <esp_wifi.h>
+	//#include <WiFi.h>
 	#include "time.h"
 
 	//#include <esp_wifi.h>						 	// must be first
@@ -107,6 +114,7 @@
 #include "api.h"
 
 #include "AQI_Calculation.h"
+#include "esp_deep_sleep.h"
 
 // ***************************** Variables *********************************
 
@@ -187,7 +195,7 @@ bool BUT_C_PRESS=false;
 
 bool BUT_DB_CLEAR_FLAG=false;
 
-RecMode	Mode = RecMode::NoGPS;		// default mode without GPS
+RTC_DATA_ATTR RecMode	Mode = RecMode::NoGPS;		// default mode without GPS // Stored in RTC low power memory
 
 bool inWindow = false;				// Check if sensor is in anonimizing rectangle coordinates
 
@@ -212,6 +220,7 @@ void TaskDisplay( 		void *pvParameters );
 void TaskWiFi( 			void *pvParameters );
 
 static TaskHandle_t xTaskDisplay_handle = NULL;
+static TaskHandle_t xTaskReadSensors_handle = NULL;
 static TaskHandle_t xTaskArchiveMeas_handle = NULL;
 
 UBaseType_t uxHighWaterMark_TaskBlink;
@@ -243,15 +252,18 @@ void setup() {
 	SDS_cmd(PmSensorCmd::Stop);
 	PMS_cmd(PmSensorCmd::Stop);
 
+	// Drop power consumption in case we are out of battery
+	WiFi.disconnect(true);
+	WiFi.mode(WIFI_OFF);
+	btStop();
+//	esp_wifi_stop(); // fails
 
 	// check brownout
 	// https://github.com/espressif/arduino-esp32/issues/449
-	if(rtc_get_reset_reason(0)==15){
+	if(rtc_get_reset_reason(0)==15  ||  rtc_get_reset_reason(1)==15){
 		ESP.deepSleep(UINT_MAX);
 	}
-	if(rtc_get_reset_reason(1)==15){
-		ESP.deepSleep(UINT_MAX);
-	}
+
 
 	// Configure buttons
 	pinMode(BUT_1, INPUT_PULLUP);
@@ -267,14 +279,17 @@ void setup() {
 		display.displayOff();
 	#endif
 
+	esp_sleep_wakeup_cause_t wakeup_reason;
+	wakeup_reason = esp_sleep_get_wakeup_cause();
+	if(wakeup_reason == ESP_SLEEP_WAKEUP_UNDEFINED){
 
-	esp_sleep_enable_timer_wakeup(100*1000);
+		// wait for button click before startup if it is a cold start. Will skip that step if it was a wakeup
+		esp_sleep_enable_timer_wakeup(100*1000);
+		while(digitalRead(BUT_1) && digitalRead(BUT_2) && digitalRead(BUT_3)){
+			vTaskDelay(2); // one tick delay (1ms) in between reads for stability
+			esp_light_sleep_start();
+		}
 
-	// wait for button click before startup
-	while(digitalRead(BUT_1) && digitalRead(BUT_2) && digitalRead(BUT_3)){
-		vTaskDelay(5); // one tick delay (1ms) in between reads for stability
-
-		esp_light_sleep_start();
 	}
 
  	// initialize digital LED_BUILTIN as an output.
@@ -313,105 +328,101 @@ void setup() {
 		/*****************************************************************
 		 * Turn on OLED display																						 *
 		 *****************************************************************/
-
 		display.flipScreenVertically();
-
-		// Boot screen
 		display.displayOn();
-		#ifdef CFG_GPS
-
-			display.setTextAlignment(TEXT_ALIGN_CENTER);
-
-			display.drawString(64, 0, "WiFi SmartConfig");
-			display.drawString(64, 13, "press button to start");
-
-		#endif
 	#endif
 
 	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
 
 	#ifdef CFG_GPS
-	// time to start WiFi setup
-	String progress = " .";
-	for(int del=0; del<42; del++){
+	if(wakeup_reason == ESP_SLEEP_WAKEUP_UNDEFINED){
 
-		digitalWrite(LED_BUILTIN, HIGH);    // turn the LED ON by making the voltage HIGH
-		vTaskDelay(100); // one tick delay (1ms) in between reads for stability
-		digitalWrite(LED_BUILTIN, LOW );
-		vTaskDelay(100); // one tick delay (1ms) in between reads for stability
-		progress += " .";
+		display.setTextAlignment(TEXT_ALIGN_CENTER);
+		display.drawString(64, 0, "WiFi SmartConfig");
+		display.drawString(64, 13, "press button to start");
 
-		#ifdef CFG_LCD
-			display.drawString(0, 37, progress);
-			display.display();
-		#endif
+		// time to start WiFi setup
+		String progress = " .";
+		for(int del=0; del<42; del++){
 
-		bool BUT_A = !digitalRead(BUT_1);	// no internal pullup
-		bool BUT_B = !digitalRead(BUT_2);
-		bool BUT_C = !digitalRead(BUT_3);
-
-		if(BUT_A || BUT_B || BUT_C){
-
-			// Display WiFi config
-			xSemaphoreTake(I2C_mutex, portMAX_DELAY);
-			display.clear();
-			display.displayOn();
-			display.setTextAlignment(TEXT_ALIGN_LEFT);
-			display.drawString(0, 0,  "START ESP TOUCH SC");
-			display.drawString(0, 13, "on your smartphone");
-			display.display();
-
-			//Init WiFi as Station, start SmartConfig
-			WiFi.mode(WIFI_AP_STA);
-			WiFi.beginSmartConfig();
-
-			//Wait for SmartConfig packet from mobile
-			debug_out("Waiting for SmartConfig",						DEBUG_MIN_INFO, 1);
-
-			while (!WiFi.smartConfigDone()) {
-				Serial.print(".");
-
-
-				digitalWrite(LED_BUILTIN, HIGH);    // turn the LED ON by making the voltage HIGH
-				vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
-				digitalWrite(LED_BUILTIN, LOW );
-				vTaskDelay(500);  // one tick delay (1ms) in between reads for stability
-
-
-			}
-
-			//Wait for WiFi to connect to AP
-			debug_out("Waiting for WiFi",								DEBUG_MIN_INFO, 1);
+			digitalWrite(LED_BUILTIN, HIGH);    // turn the LED ON by making the voltage HIGH
+			vTaskDelay(100); // one tick delay (1ms) in between reads for stability
 			digitalWrite(LED_BUILTIN, LOW );
+			vTaskDelay(100); // one tick delay (1ms) in between reads for stability
+			progress += " .";
 
-			while (WiFi.status() != WL_CONNECTED) {
+			#ifdef CFG_LCD
+				display.drawString(0, 37, progress);
+				display.display();
+			#endif
 
-				display.drawString(0, 25, "SmartConfig received");
+			bool BUT_A = !digitalRead(BUT_1);	// no internal pullup
+			bool BUT_B = !digitalRead(BUT_2);
+			bool BUT_C = !digitalRead(BUT_3);
+
+			if(BUT_A || BUT_B || BUT_C){
+
+				// Display WiFi config
+				xSemaphoreTake(I2C_mutex, portMAX_DELAY);
+				display.clear();
+				display.displayOn();
+				display.setTextAlignment(TEXT_ALIGN_LEFT);
+				display.drawString(0, 0,  "START ESP TOUCH SC");
+				display.drawString(0, 13, "on your smartphone");
 				display.display();
 
-				vTaskDelay(500);  // one tick delay (1ms) in between reads for stability
-				Serial.print(".");
+				//Init WiFi as Station, start SmartConfig
+				WiFi.mode(WIFI_AP_STA);
+				WiFi.beginSmartConfig();
+
+				//Wait for SmartConfig packet from mobile
+				debug_out("Waiting for SmartConfig",						DEBUG_MIN_INFO, 1);
+
+				while (!WiFi.smartConfigDone()) {
+					Serial.print(".");
 
 
-				digitalWrite(LED_BUILTIN, HIGH);    // turn the LED ON by making the voltage HIGH
-				vTaskDelay(20);  // one tick delay (1ms) in between reads for stability
+					digitalWrite(LED_BUILTIN, HIGH);    // turn the LED ON by making the voltage HIGH
+					vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
+					digitalWrite(LED_BUILTIN, LOW );
+					vTaskDelay(500);  // one tick delay (1ms) in between reads for stability
+
+
+				}
+
+				//Wait for WiFi to connect to AP
+				debug_out("Waiting for WiFi",								DEBUG_MIN_INFO, 1);
 				digitalWrite(LED_BUILTIN, LOW );
-				vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
 
+				while (WiFi.status() != WL_CONNECTED) {
+
+					display.drawString(0, 25, "SmartConfig received");
+					display.display();
+
+					vTaskDelay(500);  // one tick delay (1ms) in between reads for stability
+					Serial.print(".");
+
+
+					digitalWrite(LED_BUILTIN, HIGH);    // turn the LED ON by making the voltage HIGH
+					vTaskDelay(20);  // one tick delay (1ms) in between reads for stability
+					digitalWrite(LED_BUILTIN, LOW );
+					vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
+
+
+				}
+
+				display.drawString(0, 37, "IP: " + WiFi.localIP().toString());
+				display.drawString(0, 49, "wait for power cycle");
+				digitalWrite(LED_BUILTIN, LOW );
+
+
+				display.display();
+
+				while(true){
+					vTaskDelay(500); // one tick delay (1ms) in between reads for stability
+				}
 
 			}
-
-			display.drawString(0, 37, "IP: " + WiFi.localIP().toString());
-			display.drawString(0, 49, "wait for power cycle");
-			digitalWrite(LED_BUILTIN, LOW );
-
-
-			display.display();
-
-			while(true){
-				vTaskDelay(500); // one tick delay (1ms) in between reads for stability
-			}
-
 		}
 	}
 	#endif
@@ -560,7 +571,7 @@ void setup() {
 		,  1024*3 	// Stack size
 		,  NULL
 		,  2  		// Priority
-		,  NULL
+		,  &xTaskReadSensors_handle
 		,  ARDUINO_RUNNING_CORE);
 
 	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
@@ -1194,9 +1205,40 @@ void TaskArchiveMeas(void *pvParameters)  // This is a task.
 		  time(&now);
 		  if(now > 1577836800){					// check if time was set
 			  Store2DB();						// no reason to store values without timestamp
+
+			  if(Mode == RecMode::NoGPS_Slow){
+				  if(SDSmeasPM025.ArchMeas.avg[1]>-1.0){
+						// Two measurements recorded
+						// go to sleep till next cycle
+
+						debug_out(F("Stand by: Sleep till next cycle"), 					DEBUG_MIN_INFO, 1);
+
+
+						vTaskDelete(xTaskReadSensors_handle);
+						vTaskDelete(xTaskDisplay_handle);
+
+
+						WiFi.disconnect(true);
+						WiFi.mode(WIFI_OFF);
+						btStop();
+						//	esp_wifi_stop(); // fails
+
+						SDS_cmd(PmSensorCmd::Stop);
+						PMS_cmd(PmSensorCmd::Stop);
+						display.displayOff();
+
+						// Configure the timer to wake us up!
+						esp_sleep_enable_timer_wakeup(5 * 60L * 1000000L);
+
+						vTaskDelay(2000);  // one tick delay (1ms) in between reads for stability
+						// Go to sleep! Zzzz
+						esp_deep_sleep_start();
+
+				  }
+			  }
 		  }
 		  else{
-			  debug_out(F("Time was not set. No DB push"), 					DEBUG_WARNING, 1);
+			  debug_out(F("Time was not set. No DB push"), 									DEBUG_WARNING, 1);
 		  }
 	  }
 
@@ -1252,33 +1294,35 @@ void TaskWiFi(void *pvParameters)  // This is a task.
 	for (;;) // A Task shall never return or exit.
 	{
 
-    	xSemaphoreTake(SQL_mutex, portMAX_DELAY);
+		if(Mode != RecMode::NoGPS_Slow){
 
-	    if (!WiFi.isConnected()) {
-
-			// Attempt to reconnect
-			waitForWifiToConnect(6);
+			xSemaphoreTake(SQL_mutex, portMAX_DELAY);
 
 			if (!WiFi.isConnected()) {
 
-				debug_out(F("WiFi in cycle unable to reconnect"), 			DEBUG_ERROR, 1);
+				// Attempt to reconnect
+				waitForWifiToConnect(6);
+
+				if (!WiFi.isConnected()) {
+
+					debug_out(F("WiFi in cycle unable to reconnect"), 			DEBUG_ERROR, 1);
+				}
 			}
-	    }
-		else {
-			debug_out(F("WiFi connected at IP address: "), 					DEBUG_MED_INFO, 0);
-			debug_out(WiFi.localIP().toString(), 							DEBUG_MED_INFO, 1);
+			else {
+				debug_out(F("WiFi connected at IP address: "), 					DEBUG_MED_INFO, 0);
+				debug_out(WiFi.localIP().toString(), 							DEBUG_MED_INFO, 1);
 
-			//init and get the time
-			configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+				//init and get the time
+				configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
 
-			time(&now);
-			debug_out("UNIX time: " + String(now), DEBUG_ALWAYS, 1);
+				time(&now);
+				debug_out("UNIX time: " + String(now), DEBUG_ALWAYS, 1);
 
-			//printLocalTime();
+				//printLocalTime();
+			}
+			xSemaphoreGive(SQL_mutex);
+
 		}
-
-		xSemaphoreGive(SQL_mutex);
-
 	    // Wait for the next cycle.
 		vTaskDelay(5000);  // one tick delay (1ms) in between reads for stability
 
@@ -2085,3 +2129,4 @@ String StrSplitItem(const String& toSplit, const char Delim, int Index) {
 	return s;
 
 }
+
