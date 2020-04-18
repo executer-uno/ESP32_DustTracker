@@ -1443,7 +1443,7 @@ void display_values() {
 		display.drawString(90, 37, check_display_value(SDSmeasPM100.ArchMeas.avg[0], -1.0, 1, 6));
 
 		AQI_value = (int)max(getAQI( false, SDSmeasPM025.ArchMeas.avg[0] ),getAQI( true, SDSmeasPM100.ArchMeas.avg[0] ));
-		display.drawString(55, 49, AQI_value + " (" + updateAQIDisplay(AQI_value) + ")");
+		display.drawString(55, 49, String(AQI_value) + " (" + updateAQIDisplay(AQI_value) + ")");
 
 		break;
 
@@ -1511,14 +1511,16 @@ void display_values() {
 
 		display.setTextAlignment(TEXT_ALIGN_RIGHT);
 		display.drawString(30, 13, "Recs:");
+		display.drawString(90, 13, "RID:");
 		display.drawString(30, 25, "SSID:");
 		display.drawString(30, 37, "IP:");
 
 		display.setTextAlignment(TEXT_ALIGN_LEFT);
-		display.drawString(40, 13, String(rec_count) + " RID: " 		+ String((int)RID));
-		display.drawString(40, 25, WiFi.SSID() + " (" + String(calcWiFiSignalQuality(WiFi.RSSI())) + "%");
-		display.drawString(40, 37, WiFi.localIP().toString());
+		display.drawString(40, 13, String(rec_count));
+		display.drawString(100,13, String((int)RID));
 
+		display.drawString(40, 25, "\"" + WiFi.SSID() + " \" (" + String(calcWiFiSignalQuality(WiFi.RSSI())) + "%)");
+		display.drawString(40, 37, WiFi.localIP().toString());
 
 		if(BUT_B_PRESS){
 			BUT_DB_CLEAR_FLAG = true;
@@ -1536,14 +1538,14 @@ void display_values() {
 		display_header = F("Mode");
 
 		display.setTextAlignment(TEXT_ALIGN_RIGHT);
-		display.drawString(45, 25, "No GPS");
-		display.drawString(45, 37, "GPS");
+		display.drawString(45,  25, "No GPS");
+		display.drawString(45,  37, "GPS");
 
 		display.setTextAlignment(TEXT_ALIGN_LEFT);
-		display.drawString(50, 13, "NORM    SLOW");
+		display.drawString(50,  13, "NORM    SLOW");
 
-		display.drawString(60, 25, String(Mode == RecMode::NoGPS? "O":""));
-		display.drawString(60, 37, String(Mode == RecMode::GPS  ? "O":""));
+		display.drawString(60,  25, String(Mode == RecMode::NoGPS? "O":""));
+		display.drawString(60,  37, String(Mode == RecMode::GPS  ? "O":""));
 
 		display.drawString(110, 25, String(Mode == RecMode::NoGPS_Slow? "O":""));
 		display.drawString(110, 37, String(Mode == RecMode::GPS_Slow  ? "O":""));
@@ -1609,7 +1611,7 @@ void display_values() {
 			display.setPixel(i, Y);
 			display.setPixel(i, 64-16);
 		}
-		display.drawString(64, 52, displayGenerateFooter(screen_count));
+
 	}
 
 	display.display();
