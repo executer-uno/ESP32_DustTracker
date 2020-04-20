@@ -46,6 +46,10 @@ Original stationary station from opendata-stuttgart works well out of my window 
 
 https://github.com/noerw/mobile-sensebox
 
+AQI calculation:
+https://www3.epa.gov/airnow/ani/pm25_aqi_reporting_nowcast_overview.pdf?fbclid=IwAR3x9rvidAmwUB2_rBXvZB6xviRX2Vrxxi6mbT1fyVTiGkt4w3ONSEcnVzw
+
+Special thanks to @savednipro organization for information support.
 
 OpenSenseMap (OSM) service
 ---------------------------------
