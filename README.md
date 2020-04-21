@@ -54,6 +54,7 @@ Low cost sensors studying articles:
 
 * (https://aqicn.org/sensor/pms5003-7003/ru/) (shows particle sizes not really measured by PMS sensors)
 
+* https://www.e3s-conferences.org/articles/e3sconf/pdf/2018/19/e3sconf_eko-dok2018_00006.pdf
 
 Special thanks to @savednipro organization for information support.
 
