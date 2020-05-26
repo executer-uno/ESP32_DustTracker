@@ -10,20 +10,6 @@
 #include "Definitions.h"
 #include "html-content.h"
 
-extern HardwareSerial 	serialSDS;
-extern HardwareSerial 	serialPMS;
-extern HardwareSerial 	serialGPS;
-
-extern PMmeas SDSmeasPM025;
-extern PMmeas SDSmeasPM100;
-extern PMmeas PMSmeasPM010;
-extern PMmeas PMSmeasPM025;
-extern PMmeas PMSmeasPM100;
-
-extern PMmeas BMEmeasP;
-extern PMmeas BMEmeasT;
-extern PMmeas BMEmeasH;
-
 
 template<typename T, std::size_t N> constexpr std::size_t array_num_elements(const T(&)[N]) {
 	return N;
@@ -33,7 +19,7 @@ template<typename T, std::size_t N> constexpr std::size_t array_num_elements(con
 /*****************************************************************
  * send SDS011 command (start, stop, continuous mode, version		*
  *****************************************************************/
-void SDS_cmd(PmSensorCmd cmd) {
+void SDS_cmd(Stream *UART_SDS, PmSensorCmd cmd) {
 	static constexpr uint8_t start_cmd[] PROGMEM = {
 		0xAA, 0xB4, 0x06, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0x06, 0xAB
 	};
@@ -63,13 +49,14 @@ void SDS_cmd(PmSensorCmd cmd) {
 		memcpy_P(buf, version_cmd, cmd_len);
 		break;
 	}
-	serialSDS.write(buf, cmd_len);
+	UART_SDS->write(buf, cmd_len);
 }
+
 
 /*****************************************************************
  * send Plantower PMS sensor command start, stop, cont. mode		 *
  *****************************************************************/
-void PMS_cmd(PmSensorCmd cmd) {
+void PMS_cmd(Stream *UART_PMS, PmSensorCmd cmd) {
 	static constexpr uint8_t start_cmd[] PROGMEM = {
 		0x42, 0x4D, 0xE4, 0x00, 0x01, 0x01, 0x74
 	};
@@ -96,13 +83,14 @@ void PMS_cmd(PmSensorCmd cmd) {
 		assert(false && "not supported by this sensor");
 		break;
 	}
-	serialPMS.write(buf, cmd_len);
+	UART_PMS->write(buf, cmd_len);
 }
+
 
 /*****************************************************************
  * read SDS011 sensor values																		 *
  *****************************************************************/
-void sensorSDS() {
+void sensorSDS(Stream *UART_PMS, PMmeas *measPM025, PMmeas *measPM100) {
 	char buffer;
 	int value;
 	int len = 0;
@@ -116,21 +104,21 @@ void sensorSDS() {
 
 	debug_out(String(FPSTR(DBG_TXT_START_READING)) + FPSTR(SENSORS_SDS011), DEBUG_MED_INFO, 1);
 
-	if ((SDSmeasPM025.status == SensorSt::raw) && (millis() > STUP_TIME)) {
+	if ((measPM025->status == SensorSt::raw) && (millis() > STUP_TIME)) {
 		SDS_cmd(PmSensorCmd::Start);
 
-		while (serialSDS.available() > 0) // Initial buffer flush
+		while (UART_PMS->available() > 0) // Initial buffer flush
 		{
-			buffer = serialSDS.read();
+			buffer = UART_PMS->read();
 		}
-		SDSmeasPM025.status = SensorSt::wait;
-		SDSmeasPM100.status = SensorSt::wait;
+		measPM025->status = SensorSt::wait;
+		measPM100->status = SensorSt::wait;
 
 	}
 
-	if (SDSmeasPM025.status != SensorSt::raw){
-		while (serialSDS.available() > 0) {
-			buffer = serialSDS.read();
+	if (measPM025->status != SensorSt::raw){
+		while (UART_PMS->available() > 0) {
+			buffer = UART_PMS->read();
 			debug_out(String(len) + " - " + String(buffer, DEC) + " - " + String(buffer, HEX) + " - " + int(buffer) + " .", DEBUG_MAX_INFO, 1);
 	//			"aa" = 170, "ab" = 171, "c0" = 192
 			value = int(buffer);
@@ -169,8 +157,8 @@ void sensorSDS() {
 					checksum_ok = 1;
 				} else {
 					len = -1;
-					SDSmeasPM025.CRCError();
-					SDSmeasPM100.CRCError();
+					measPM025->CRCError();
+					measPM100->CRCError();
 				};
 				break;
 			case (9):
@@ -186,24 +174,24 @@ void sensorSDS() {
 			if (len == 10 && checksum_ok == 1 ) {
 				if ((! isnan(pm100_serial)) && (! isnan(pm025_serial))) {
 
-					SDSmeasPM025.status = SensorSt::ok;
-					SDSmeasPM100.status = SensorSt::ok;
+					measPM025->status = SensorSt::ok;
+					measPM100->status = SensorSt::ok;
 
-					SDSmeasPM025.NewMeas(((float)pm025_serial)/10.0);
-					SDSmeasPM100.NewMeas(((float)pm100_serial)/10.0);
+					measPM025->NewMeas(((float)pm025_serial)/10.0);
+					measPM100->NewMeas(((float)pm100_serial)/10.0);
 
 					/*
 					debug_out(F("SDS:"), 												DEBUG_MIN_INFO, 0);
-					debug_out(SDSmeasPM100.DebugAvg() + "," + SDSmeasPM025.DebugAvg(),	DEBUG_MIN_INFO, 1);
+					debug_out(SDSmeasPM100.DebugAvg() + "," + measPM025.DebugAvg(),	DEBUG_MIN_INFO, 1);
 					 */
 
 					debug_out(F("SDS PM 2.5:"), 			DEBUG_MED_INFO, 0);
-					debug_out(SDSmeasPM025.DebugRange(),	DEBUG_MED_INFO, 1);
+					debug_out(measPM025->DebugRange(),	DEBUG_MED_INFO, 1);
 					debug_out(F("SDS PM10.0:"), 			DEBUG_MED_INFO, 0);
-					debug_out(SDSmeasPM100.DebugRange(),	DEBUG_MED_INFO, 1);
+					debug_out(measPM100->DebugRange(),	DEBUG_MED_INFO, 1);
 
 					debug_out(F("SDS CRC:"), 				DEBUG_MAX_INFO, 1);
-					debug_out(SDSmeasPM100.DebugCRC(),		DEBUG_MED_INFO, 1);
+					debug_out(measPM100->DebugCRC(),		DEBUG_MED_INFO, 1);
 				}
 				len = 0;
 				checksum_ok = 0;
@@ -218,10 +206,11 @@ void sensorSDS() {
 /*****************************************************************
  * read Plantronic PM sensor sensor values											 *
  *****************************************************************/
-void sensorPMS() {
+void sensorPMS(Stream *UART_PMS, PMmeas *measPM010, PMmeas *measPM025, PMmeas *measPM100) {
 	char buffer;
 	int value;
 	int len = 0;
+
 	int pm010_serial = 0;	// PM1.0 (ug/m3)
 	int pm025_serial = 0;	// PM2.5
 	int pm100_serial = 0;	// PM10.0
@@ -230,32 +219,32 @@ void sensorPMS() {
 	int TSI_pm025_serial = 0;	// PM2.5
 	int TSI_pm100_serial = 0;	// PM10.0
 
-	int checksum_is = 0;
+	int checksum_is 	= 0;
 	int checksum_should = 0;
-	int checksum_ok = 0;
-	int frame_len   = 24;	// minimum frame length
+	int checksum_ok 	= 0;
+	int frame_len   	= 24;	// minimum frame length
 
 	// https://github.com/avaldebe/AQmon/blob/master/Documents/PMS3003_LOGOELE.pdf
 	// http://download.kamami.pl/p563980-PMS3003%20series%20data%20manual_English_V2.5.pdf
 	// Sensor protocol
 
-	if((PMSmeasPM025.status == SensorSt::raw) && (millis() > STUP_TIME)) {
-		PMS_cmd(PmSensorCmd::Start);
+	if((measPM025->status == SensorSt::raw) && (millis() > STUP_TIME)) {
+		PMS_cmd(UART_PMS, PmSensorCmd::Start);
 
-		while (serialPMS.available() > 0) // Initial buffer flush
+		while (UART_PMS->available() > 0) // Initial buffer flush
 		{
-			buffer = serialPMS.read();
+			buffer = UART_PMS->read();
 		}
-		PMSmeasPM010.status = SensorSt::wait;
-		PMSmeasPM025.status = SensorSt::wait;
-		PMSmeasPM100.status = SensorSt::wait;
+		measPM010->status = SensorSt::wait;
+		measPM025->status = SensorSt::wait;
+		measPM100->status = SensorSt::wait;
 	}
-	if(PMSmeasPM025.status != SensorSt::raw){
+	if(measPM025->status != SensorSt::raw){
 
 		debug_out(String(FPSTR(DBG_TXT_START_READING)) + FPSTR(SENSORS_PMSx003), DEBUG_MED_INFO, 1);
 
-		while (serialPMS.available() > 0) {
-			buffer = serialPMS.read();
+		while (UART_PMS->available() > 0) {
+			buffer = UART_PMS->read();
 			debug_out(String(len) + " - " + String(buffer, DEC) + " - " + String(buffer, HEX) + " - " + int(buffer) + " .", DEBUG_MAX_INFO, 1);
 //			"aa" = 170, "ab" = 171, "c0" = 192
 			value = int(buffer);
@@ -348,22 +337,22 @@ void sensorPMS() {
 					checksum_ok = 1;
 				} else {
 					len = 0;
-					PMSmeasPM010.CRCError();
-					PMSmeasPM025.CRCError();
-					PMSmeasPM100.CRCError();
+					measPM010->CRCError();
+					measPM025->CRCError();
+					measPM100->CRCError();
 				};
 
 				// Telegram received
 				if (checksum_ok == 1) {
 					if ((! isnan(pm100_serial)) && (! isnan(pm010_serial)) && (! isnan(pm025_serial))) {
 
-						PMSmeasPM010.status = SensorSt::ok;
-						PMSmeasPM025.status = SensorSt::ok;
-						PMSmeasPM100.status = SensorSt::ok;
+						measPM010->status = SensorSt::ok;
+						measPM025->status = SensorSt::ok;
+						measPM100->status = SensorSt::ok;
 
-						PMSmeasPM010.NewMeas((float)pm010_serial);
-						PMSmeasPM025.NewMeas((float)pm025_serial);
-						PMSmeasPM100.NewMeas((float)pm100_serial);
+						measPM010->NewMeas((float)pm010_serial);
+						measPM025->NewMeas((float)pm025_serial);
+						measPM100->NewMeas((float)pm100_serial);
 
 						/*
 						debug_out(F("PMS:"), 																				DEBUG_MIN_INFO, 0);
@@ -371,14 +360,14 @@ void sensorPMS() {
 						*/
 
 						debug_out(F("PMS PM 1.0:"), 			DEBUG_MED_INFO, 0);
-						debug_out(PMSmeasPM010.DebugRange(),	DEBUG_MED_INFO, 1);
+						debug_out(measPM010->DebugRange(),		DEBUG_MED_INFO, 1);
 						debug_out(F("PMS PM 2.5:"), 			DEBUG_MED_INFO, 0);
-						debug_out(PMSmeasPM025.DebugRange(),	DEBUG_MED_INFO, 1);
+						debug_out(measPM025->DebugRange(),		DEBUG_MED_INFO, 1);
 						debug_out(F("PMS PM10.0:"), 			DEBUG_MED_INFO, 0);
-						debug_out(PMSmeasPM100.DebugRange(),	DEBUG_MED_INFO, 1);
+						debug_out(measPM100->DebugRange(),		DEBUG_MED_INFO, 1);
 
 						debug_out(F("PMS CRC:"), 				DEBUG_MAX_INFO, 1);
-						debug_out(PMSmeasPM100.DebugCRC(),		DEBUG_MED_INFO, 1);
+						debug_out(measPM100->DebugCRC(),		DEBUG_MED_INFO, 1);
 
 
 					}
@@ -395,9 +384,9 @@ void sensorPMS() {
 					checksum_is = 0;
 				}
 			}
-
 		}
-
 	}
 }
+
+
 
