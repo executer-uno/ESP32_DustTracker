@@ -49,6 +49,9 @@
 	#define PM2_SERIAL_RX   35	//25  	// PMS	// Swapped As-Build in new device enclosure
 	#define PM2_SERIAL_TX   32	//26	// PMS
 
+	#define PM3_SERIAL_RX   13 	// PMS External sensor on SW Serial
+	#define PM3_SERIAL_TX   14	// PMS External sensor on SW Serial
+
 	#define GPS_SERIAL_RX   16	// GPS
 	#define GPS_SERIAL_TX   17	// GPS
 

@@ -121,7 +121,7 @@
 HardwareSerial 	serialSDS(1);
 HardwareSerial 	serialPMS(2);
 
-
+SoftwareSerial 	serialPMS_EXT;
 
 #ifdef CFG_GPS
 	SoftwareSerial 	Serial; 		//Object for Bluetooth
@@ -297,8 +297,6 @@ void setup() {
 	#ifdef CFG_GPS
 		serialGPS.begin(9600, SERIAL_8N1, GPS_SERIAL_RX, GPS_SERIAL_TX);			// for HW UART GPS
 
-
-
 	#else
 		Serial.begin(115200, SERIAL_8N1, DEB_RX, DEB_TX);			 				// for HW UART GPS
 	#endif
@@ -307,6 +305,8 @@ void setup() {
 	Serial.begin(9600, SWSERIAL_8N1, DEB_RX, DEB_TX, false, 200, 110);
 	Serial.printf("ESP: 01 Min level of free heap: %u\n", ESP.getMinFreeHeap());
 
+	serialPMS_EXT.enableIntTx(false);		// For test
+	serialPMS_EXT.begin(9600, SWSERIAL_8N1, PM3_SERIAL_RX, PM3_SERIAL_TX, false, 400, 220);
 
 	time(&now);
 	debug_out("Undefined raw time:" + String(now), DEBUG_ALWAYS, 1);
