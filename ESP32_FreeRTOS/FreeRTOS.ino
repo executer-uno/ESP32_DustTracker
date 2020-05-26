@@ -210,6 +210,10 @@ PMmeas PMSmeasPM010;
 PMmeas PMSmeasPM025;
 PMmeas PMSmeasPM100;
 
+PMmeas PMSEmeasPM010;
+PMmeas PMSEmeasPM025;
+PMmeas PMSEmeasPM100;
+
 PMmeas BMEmeasP;
 PMmeas BMEmeasT;
 PMmeas BMEmeasH;
@@ -253,8 +257,8 @@ void setup() {
 	serialSDS.begin(9600, SERIAL_8N1, PM_SERIAL_RX,  PM_SERIAL_TX);			 		// for HW UART SDS
 	serialPMS.begin(9600, SERIAL_8N1, PM2_SERIAL_RX, PM2_SERIAL_TX);			 	// for HW UART PMS
 
-	SDS_cmd(PmSensorCmd::Stop);
-	PMS_cmd(PmSensorCmd::Stop);
+	SDS_cmd(&serialSDS, PmSensorCmd::Stop);
+	PMS_cmd(&serialPMS, PmSensorCmd::Stop);
 
 	// Drop power consumption in case we are out of battery
 	//WiFi.disconnect(true);
@@ -307,6 +311,8 @@ void setup() {
 
 	serialPMS_EXT.enableIntTx(false);		// For test
 	serialPMS_EXT.begin(9600, SWSERIAL_8N1, PM3_SERIAL_RX, PM3_SERIAL_TX, false, 400, 220);
+
+	PMS_cmd(&serialPMS_EXT, PmSensorCmd::Stop);
 
 	time(&now);
 	debug_out("Undefined raw time:" + String(now), DEBUG_ALWAYS, 1);
@@ -503,6 +509,13 @@ void setup() {
 				}
 
 				rc = db_exec(db, "CREATE TABLE IF NOT EXISTS measPMS (Id integer PRIMARY KEY, PM010 TEXT, PM025 TEXT, PM100 TEXT);");
+				if (rc != SQLITE_OK) {
+					 sqlite3_close(db);
+					 debug_out(F("Table measurements 'measPMS' creation failure"),			DEBUG_ERROR, 1);
+					 return;
+				}
+
+				rc = db_exec(db, "CREATE TABLE IF NOT EXISTS measPMSE (Id integer PRIMARY KEY, PM010 TEXT, PM025 TEXT, PM100 TEXT);");
 				if (rc != SQLITE_OK) {
 					 sqlite3_close(db);
 					 debug_out(F("Table measurements 'measPMS' creation failure"),			DEBUG_ERROR, 1);
@@ -1186,6 +1199,10 @@ void TaskArchiveMeas(void *pvParameters)  // This is a task.
 		  PMSmeasPM025.ArchPush();
 		  PMSmeasPM100.ArchPush();
 
+		  PMSEmeasPM010.ArchPush();
+		  PMSEmeasPM025.ArchPush();
+		  PMSEmeasPM100.ArchPush();
+
 		  BMEmeasH.ArchPush();
 		  BMEmeasT.ArchPush();
 		  BMEmeasP.ArchPush();
@@ -1211,8 +1228,10 @@ void TaskArchiveMeas(void *pvParameters)  // This is a task.
 						btStop();
 						//	esp_wifi_stop(); // fails
 
-						SDS_cmd(PmSensorCmd::Stop);
-						PMS_cmd(PmSensorCmd::Stop);
+						SDS_cmd(&serialSDS, PmSensorCmd::Stop);
+						PMS_cmd(&serialPMS, PmSensorCmd::Stop);
+						PMS_cmd(&serialPMS_EXT, PmSensorCmd::Stop);
+
 						display.displayOff();
 
 						// Try to switch off GPS
@@ -1395,10 +1414,14 @@ void TaskReadSensors(void *pvParameters)  // This is a task.
 
   for (;;)
   {
-	sensorPMS();
-    vTaskDelay(150);  // one tick delay (1ms) in between reads for stability
-    sensorSDS();
-    vTaskDelay(150);  // one tick delay (1ms) in between reads for stability
+	sensorPMS(&serialPMS, &PMSmeasPM010, &PMSmeasPM025, &PMSmeasPM100);
+    vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
+
+    sensorPMS(&serialPMS_EXT, &PMSEmeasPM010, &PMSEmeasPM025, &PMSEmeasPM100);
+    vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
+
+    sensorSDS(&serialSDS, &PMSmeasPM025, &PMSmeasPM100);
+    vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
     sensorBME280();
     vTaskDelay(150);  // one tick delay (1ms) in between reads for stability
 
@@ -2007,6 +2030,18 @@ void Store2DB(){
 				rc = db_exec(db, query.c_str());
 				if (rc != SQLITE_OK) {
 					debug_out(F("Table 'measPMS' not updated"),			DEBUG_ERROR, 1);
+				}
+
+
+				if(PMSEmeasPM010.status == SensorSt::ok){
+					query  = "INSERT INTO measPMSE (Id, PM010, PM025, PM100) VALUES ('" + String((int)RID) + "',";
+					query += "'" + Float2String(PMSEmeasPM010.ArchMeas.min[0]) 	+":" + Float2String(PMSEmeasPM010.ArchMeas.avg[0]) 	+ ":" + Float2String(PMSEmeasPM010.ArchMeas.max[0]) + "',";
+					query += "'" + Float2String(PMSEmeasPM025.ArchMeas.min[0]) 	+":" + Float2String(PMSEmeasPM025.ArchMeas.avg[0]) 	+ ":" + Float2String(PMSEmeasPM025.ArchMeas.max[0]) + "',";
+					query += "'" + Float2String(PMSEmeasPM100.ArchMeas.min[0]) 	+":" + Float2String(PMSEmeasPM100.ArchMeas.avg[0]) 	+ ":" + Float2String(PMSEmeasPM100.ArchMeas.max[0]) + "')";
+					rc = db_exec(db, query.c_str());
+					if (rc != SQLITE_OK) {
+						debug_out(F("Table 'measPMS' not updated"),			DEBUG_ERROR, 1);
+					}
 				}
 
 #ifdef CFG_GPS

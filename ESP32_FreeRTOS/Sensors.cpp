@@ -105,7 +105,7 @@ void sensorSDS(Stream *UART_PMS, PMmeas *measPM025, PMmeas *measPM100) {
 	debug_out(String(FPSTR(DBG_TXT_START_READING)) + FPSTR(SENSORS_SDS011), DEBUG_MED_INFO, 1);
 
 	if ((measPM025->status == SensorSt::raw) && (millis() > STUP_TIME)) {
-		SDS_cmd(PmSensorCmd::Start);
+		SDS_cmd(UART_PMS, PmSensorCmd::Start);
 
 		while (UART_PMS->available() > 0) // Initial buffer flush
 		{
@@ -353,11 +353,6 @@ void sensorPMS(Stream *UART_PMS, PMmeas *measPM010, PMmeas *measPM025, PMmeas *m
 						measPM010->NewMeas((float)pm010_serial);
 						measPM025->NewMeas((float)pm025_serial);
 						measPM100->NewMeas((float)pm100_serial);
-
-						/*
-						debug_out(F("PMS:"), 																				DEBUG_MIN_INFO, 0);
-						debug_out(PMSmeasPM100.DebugAvg() + "," + PMSmeasPM025.DebugAvg() + "," + PMSmeasPM010.DebugAvg(),	DEBUG_MIN_INFO, 1);
-						*/
 
 						debug_out(F("PMS PM 1.0:"), 			DEBUG_MED_INFO, 0);
 						debug_out(measPM010->DebugRange(),		DEBUG_MED_INFO, 1);
