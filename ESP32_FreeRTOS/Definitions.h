@@ -23,7 +23,7 @@
 	#define DEBUG_MED_INFO 	4
 	#define DEBUG_MAX_INFO 	5
 	// Wieviele Informationen sollenber die serielle Schnittstelle ausgegeben werden?
-	#define DEBUG DEBUG_MIN_INFO
+	#define DEBUG DEBUG_MED_INFO
 
 	#define OSM_API_ENDPOINT "ingress.opensensemap.org"				//"ingress.osem.vo1d.space"
 
@@ -43,11 +43,11 @@
 	#define PMS_API_PIN 	1
 
 	// Pinout definition ************************
-	#define PM_SERIAL_RX    35	// SDS
-	#define PM_SERIAL_TX    32	// SDS
+	#define PM_SERIAL_RX    25	//35	// SDS	// Swapped As-Build in new device enclosure
+	#define PM_SERIAL_TX    26	//32	// SDS
 
-	#define PM2_SERIAL_RX   25  // PMS
-	#define PM2_SERIAL_TX   26	// PMS
+	#define PM2_SERIAL_RX   35	//25  	// PMS	// Swapped As-Build in new device enclosure
+	#define PM2_SERIAL_TX   32	//26	// PMS
 
 	#define GPS_SERIAL_RX   16	// GPS
 	#define GPS_SERIAL_TX   17	// GPS
@@ -55,9 +55,20 @@
 	#define DEB_RX    		3	// Debug UART pins
 	#define DEB_TX    		1
 
-	#define BUT_1 			34	// no pullup!
-	#define BUT_2 			33
-	#define BUT_3 			27
+	#define BUT_1 			27	// no pullup!   // LEFT				// reordered for new enclosure
+	#define BUT_2 			34					// MID
+	#define BUT_3 			33					// RIGHT
+
+	#define SUPPLY			12			// Device supply self-control
+
+
+	#define LINE1			0
+	#define LINE2			13
+	#define LINE3			25
+	#define LINE4			37
+	#define LINEM			49
+
+
 
 	// define pins for I2C
 	#define OLED_CLASS_OBJ  SSD1306Wire

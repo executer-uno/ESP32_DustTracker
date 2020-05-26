@@ -121,6 +121,8 @@
 HardwareSerial 	serialSDS(1);
 HardwareSerial 	serialPMS(2);
 
+
+
 #ifdef CFG_GPS
 	SoftwareSerial 	Serial; 		//Object for Bluetooth
 	HardwareSerial 	serialGPS(0);
@@ -193,6 +195,8 @@ bool BUT_A_PRESS=false;
 bool BUT_B_PRESS=false;
 bool BUT_C_PRESS=false;
 
+uint32_t AnyButtonPressed = 0;
+
 bool BUT_DB_CLEAR_FLAG=false;
 
 RTC_DATA_ATTR RecMode	Mode = RecMode::NoGPS;		// default mode without GPS // Stored in RTC low power memory
@@ -253,22 +257,20 @@ void setup() {
 	PMS_cmd(PmSensorCmd::Stop);
 
 	// Drop power consumption in case we are out of battery
-	WiFi.disconnect(true);
-	WiFi.mode(WIFI_OFF);
-	btStop();
-//	esp_wifi_stop(); // fails
-
-	// check brownout
-	// https://github.com/espressif/arduino-esp32/issues/449
-	if(rtc_get_reset_reason(0)==15  ||  rtc_get_reset_reason(1)==15){
-		ESP.deepSleep(UINT_MAX);
-	}
-
+	//WiFi.disconnect(true);
+	//WiFi.mode(WIFI_OFF);
+	//btStop();
 
 	// Configure buttons
 	pinMode(BUT_1, INPUT_PULLUP);
 	pinMode(BUT_2, INPUT_PULLUP);
 	pinMode(BUT_3, INPUT_PULLUP);
+
+	// Configure device supply self-control. High = Hold supply on, Low = Power Off
+	pinMode(SUPPLY, OUTPUT);
+	digitalWrite(SUPPLY, LOW);  // Check if it was manual switching on. If non - most likely battery is low, and brownout restart.
+	vTaskDelay(500); 			// one tick delay (1ms) in between reads for stability
+	digitalWrite(SUPPLY, HIGH); // Check if it was manual switching on. If non - most likely battery is low, and brownout restart.
 
 
 	#ifdef CFG_LCD
@@ -279,24 +281,9 @@ void setup() {
 		display.displayOff();
 	#endif
 
-	esp_sleep_wakeup_cause_t wakeup_reason;
-	wakeup_reason = esp_sleep_get_wakeup_cause();
-	if(wakeup_reason == ESP_SLEEP_WAKEUP_UNDEFINED){
-
-		// wait for button click before startup if it is a cold start. Will skip that step if it was a wakeup
-		esp_sleep_enable_timer_wakeup(100*1000);
-		while(digitalRead(BUT_1) && digitalRead(BUT_2) && digitalRead(BUT_3)){
-			vTaskDelay(2); // one tick delay (1ms) in between reads for stability
-			esp_light_sleep_start();
-		}
-
-	}
-
  	// initialize digital LED_BUILTIN as an output.
 	pinMode(LED_BUILTIN, OUTPUT);
 	digitalWrite(LED_BUILTIN, HIGH);    // turn the LED ON by making the voltage HIGH
-	vTaskDelay(1000); // one tick delay (1ms) in between reads for stability
-
 
 	char MAC_chars[15]; //Create a Unique AP from MAC address
 	uint64_t chipid= ESP.getEfuseMac();			//The chip ID is essentially its MAC address(length: 6 bytes).
@@ -310,15 +297,15 @@ void setup() {
 	#ifdef CFG_GPS
 		serialGPS.begin(9600, SERIAL_8N1, GPS_SERIAL_RX, GPS_SERIAL_TX);			// for HW UART GPS
 
-		//Serial.begin("ESP32_PMS_Station"); //Name of your Bluetooth Station
-		Serial.begin(9600, SWSERIAL_8N1, DEB_RX, DEB_TX, false, 250, 50);
-		Serial.println("\nSoftware serial test started");
+
 
 	#else
 		Serial.begin(115200, SERIAL_8N1, DEB_RX, DEB_TX);			 				// for HW UART GPS
 	#endif
 
-	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
+	Serial.enableIntTx(false);		// For test
+	Serial.begin(9600, SWSERIAL_8N1, DEB_RX, DEB_TX, false, 200, 110);
+	Serial.printf("ESP: 01 Min level of free heap: %u\n", ESP.getMinFreeHeap());
 
 
 	time(&now);
@@ -328,14 +315,15 @@ void setup() {
 		/*****************************************************************
 		 * Turn on OLED display																						 *
 		 *****************************************************************/
-		display.flipScreenVertically();
+		display.resetOrientation();
+		//display.flipScreenVertically();
+		//display.mirrorScreen();				// Adapt for new device enclosure and board
 		display.displayOn();
 	#endif
 
-	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
+	Serial.printf("ESP: 02 Min level of free heap: %u\n", ESP.getMinFreeHeap());
 
 	#ifdef CFG_GPS
-	if(wakeup_reason == ESP_SLEEP_WAKEUP_UNDEFINED){
 
 		display.setTextAlignment(TEXT_ALIGN_CENTER);
 		display.drawString(64, 0, "WiFi SmartConfig");
@@ -366,9 +354,9 @@ void setup() {
 				xSemaphoreTake(I2C_mutex, portMAX_DELAY);
 				display.clear();
 				display.displayOn();
-				display.setTextAlignment(TEXT_ALIGN_LEFT);
-				display.drawString(0, 0,  "START ESP TOUCH SC");
-				display.drawString(0, 13, "on your smartphone");
+				display.setTextAlignment(TEXT_ALIGN_CENTER);
+				display.drawString(64, LINE1,  "START ESP TOUCH SC");
+				display.drawString(64, LINE2, "on your smartphone");
 				display.display();
 
 				//Init WiFi as Station, start SmartConfig
@@ -396,7 +384,7 @@ void setup() {
 
 				while (WiFi.status() != WL_CONNECTED) {
 
-					display.drawString(0, 25, "SmartConfig received");
+					display.drawString(64, LINEM, "SmartConfig received");
 					display.display();
 
 					vTaskDelay(500);  // one tick delay (1ms) in between reads for stability
@@ -411,23 +399,23 @@ void setup() {
 
 				}
 
-				display.drawString(0, 37, "IP: " + WiFi.localIP().toString());
-				display.drawString(0, 49, "wait for power cycle");
+				display.drawString(64, LINE3, "IP: " + WiFi.localIP().toString());
+				display.drawString(64, LINE4, "restart me now");
 				digitalWrite(LED_BUILTIN, LOW );
 
 
 				display.display();
 
 				while(true){
+					digitalWrite(SUPPLY, LOW );
 					vTaskDelay(500); // one tick delay (1ms) in between reads for stability
 				}
 
 			}
 		}
-	}
 	#endif
 
-	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
+	Serial.printf("ESP: 03 Min level of free heap: %u\n", ESP.getMinFreeHeap());
 
 	#ifdef CFG_BME280
 		if (cfg::bme280_read) {
@@ -443,13 +431,13 @@ void setup() {
 		}
 	#endif
 
-	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
+	Serial.printf("ESP: 04 Min level of free heap: %u\n", ESP.getMinFreeHeap());
 
 	#ifdef CFG_GPS
 		initGPS();
 	#endif
 
-	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
+	Serial.printf("ESP: 05 Min level of free heap: %u\n", ESP.getMinFreeHeap());
 
 
 	#ifdef CFG_SQL
@@ -555,14 +543,14 @@ void setup() {
 
 	#endif
 
-	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
+	Serial.printf("ESP: 06 Min level of free heap: %u\n", ESP.getMinFreeHeap());
 
 	// Set time zone once, not in loop.
     setTimeZone(gmtOffset_sec,daylightOffset_sec);
 
 	connectWifi();
 
-	Serial.printf("ESP: 00 Min level of free heap: %u\n", ESP.getMinFreeHeap());
+	Serial.printf("ESP: 07 Min level of free heap: %u\n", ESP.getMinFreeHeap());
 
     // Now set up two tasks to run independently.
 	xTaskCreatePinnedToCore(
@@ -1227,8 +1215,12 @@ void TaskArchiveMeas(void *pvParameters)  // This is a task.
 						PMS_cmd(PmSensorCmd::Stop);
 						display.displayOff();
 
+						// Try to switch off GPS
+						// https://github.com/JuniorIOT/GPS-Lora-Balloon-rfm95-TinyGPS/blob/master/Balloon-rfm95/Balloon-rfm95.ino
+						gps_SetMode_gpsOff();
+
 						// Configure the timer to wake us up!
-						esp_sleep_enable_timer_wakeup(5 * 60L * 1000000L);
+						esp_sleep_enable_timer_wakeup(15 * 60L * 1000000L);
 
 						vTaskDelay(2000);  // one tick delay (1ms) in between reads for stability
 						// Go to sleep! Zzzz
@@ -1373,6 +1365,21 @@ void TaskKeyboard(void *pvParameters)  // This is a task.
 	BUT_B_PRESS = BUT_B;
 	BUT_C_PRESS = BUT_C;
 
+	if(BUT_A_PRESS||BUT_B_PRESS||BUT_C_PRESS){
+		AnyButtonPressed++;
+	}
+	else{
+		AnyButtonPressed = 0;
+	}
+	if(AnyButtonPressed > xFrequency*2){
+		digitalWrite(SUPPLY, LOW);
+	}
+	else{
+		digitalWrite(SUPPLY, HIGH);
+	}
+
+
+
     // Wait for the next cycle.
     vTaskDelayUntil( &xLastWakeTime, xFrequency );
 
@@ -1469,25 +1476,25 @@ void display_values() {
 		display_header =  F("PM (µg/m³)");
 
 		display.setTextAlignment(TEXT_ALIGN_RIGHT);
-		display.drawString(50, 13, "PM 0.1:");
-		display.drawString(50, 25, "PM 2.5:");
-		display.drawString(50, 37, "PM 10.0:");
-		display.drawString(50, 49, "AQI:");
+		display.drawString(50, LINE1, "PM 0.1:");
+		display.drawString(50, LINE2, "PM 2.5:");
+		display.drawString(50, LINE3, "PM 10.0:");
+		display.drawString(50, LINE4, "AQI:");
 
 		display.setTextAlignment(TEXT_ALIGN_LEFT);
-		display.drawString(55, 13, check_display_value(PMSmeasPM010.ArchMeas.avg[0], -1.0, 1, 6));
-		display.drawString(55, 25, check_display_value(PMSmeasPM025.ArchMeas.avg[0], -1.0, 1, 6));
-		display.drawString(55, 37, check_display_value(PMSmeasPM100.ArchMeas.avg[0], -1.0, 1, 6));
+		display.drawString(55, LINE1, check_display_value(PMSmeasPM010.ArchMeas.avg[0], -1.0, 1, 6));
+		display.drawString(55, LINE2, check_display_value(PMSmeasPM025.ArchMeas.avg[0], -1.0, 1, 6));
+		display.drawString(55, LINE3, check_display_value(PMSmeasPM100.ArchMeas.avg[0], -1.0, 1, 6));
 
-		display.drawString(85, 13, ";");
-		display.drawString(85, 25, ";");
-		display.drawString(85, 37, ";");
+		display.drawString(85, LINE1, ";");
+		display.drawString(85, LINE2, ";");
+		display.drawString(85, LINE3, ";");
 
-		display.drawString(90, 25, check_display_value(SDSmeasPM025.ArchMeas.avg[0], -1.0, 1, 6));
-		display.drawString(90, 37, check_display_value(SDSmeasPM100.ArchMeas.avg[0], -1.0, 1, 6));
+		display.drawString(90, LINE2, check_display_value(SDSmeasPM025.ArchMeas.avg[0], -1.0, 1, 6));
+		display.drawString(90, LINE3, check_display_value(SDSmeasPM100.ArchMeas.avg[0], -1.0, 1, 6));
 
 		AQI_value = (int)max(getAQI( false, SDSmeasPM025.ArchMeas.avg[0] ),getAQI( true, SDSmeasPM100.ArchMeas.avg[0] ));
-		display.drawString(55, 49, String(AQI_value) + " (" + updateAQIDisplay(AQI_value) + ")");
+		display.drawString(55, LINE4, String(AQI_value) + " (" + updateAQIDisplay(AQI_value) + ")");
 
 		break;
 
@@ -1495,18 +1502,18 @@ void display_values() {
 		display_header = F("Air");
 
 		display.setTextAlignment(TEXT_ALIGN_RIGHT);
-		display.drawString(40, 13, "Temp.:");
-		display.drawString(40, 25, "Hum.:");
-		display.drawString(40, 37, "Pres.:");
+		display.drawString(40, LINE1, "Temp.:");
+		display.drawString(40, LINE2, "Hum.:");
+		display.drawString(40, LINE3, "Pres.:");
 
-		display.drawString(95, 13, check_display_value(BMEmeasT.ArchMeas.avg[0] , -1.0				, 1, 6));
-		display.drawString(95, 25, check_display_value(BMEmeasH.ArchMeas.avg[0] , -1.0				, 1, 6));
-		display.drawString(95, 37, check_display_value(BMEmeasP.ArchMeas.avg[0]  / 100, (-1 / 100.0), 1, 6));
+		display.drawString(95, LINE1, check_display_value(BMEmeasT.ArchMeas.avg[0] , -1.0				, 1, 6));
+		display.drawString(95, LINE2, check_display_value(BMEmeasH.ArchMeas.avg[0] , -1.0				, 1, 6));
+		display.drawString(95, LINE3, check_display_value(BMEmeasP.ArchMeas.avg[0]  / 100, (-1 / 100.0), 1, 6));
 
 		display.setTextAlignment(TEXT_ALIGN_LEFT);
-		display.drawString(100, 13, "°C");
-		display.drawString(100, 25, "%");
-		display.drawString(100, 37, "hPa");
+		display.drawString(100, LINE1, "°C");
+		display.drawString(100, LINE2, "%");
+		display.drawString(100, LINE3, "hPa");
 
 		break;
 
@@ -1514,13 +1521,13 @@ void display_values() {
 		display_header = F("GPS");
 
 		display.setTextAlignment(TEXT_ALIGN_RIGHT);
-		display.drawString(40, 13, "Lat:");
-		display.drawString(40, 25, "Lon:");
-		display.drawString(40, 37, "Alt:");
+		display.drawString(40, LINE1, "Lat:");
+		display.drawString(40, LINE2, "Lon:");
+		display.drawString(40, LINE3, "Alt:");
 
-		display.drawString(100, 13, check_display_value(last_value_GPS_lat , GPS_UNDEF, 6, 10));
-		display.drawString(100, 25, check_display_value(last_value_GPS_lon , GPS_UNDEF, 6, 10));
-		display.drawString(100, 37, check_display_value(last_value_GPS_alt , GPS_UNDEF, 2, 10));
+		display.drawString(100, LINE1, check_display_value(last_value_GPS_lat , GPS_UNDEF, 6, 10));
+		display.drawString(100, LINE2, check_display_value(last_value_GPS_lon , GPS_UNDEF, 6, 10));
+		display.drawString(100, LINE3, check_display_value(last_value_GPS_alt , GPS_UNDEF, 2, 10));
 
 		break;
 
@@ -1528,24 +1535,24 @@ void display_values() {
 		display_header = F("Stack free");
 
 		display.setTextAlignment(TEXT_ALIGN_RIGHT);
-		display.drawString(25, 13, "Blink");
-		display.drawString(25, 25, "Diag");
-		display.drawString(25, 37, "Arch");
-		display.drawString(25, 49, "WiFi");
+		display.drawString(25, LINE1, "Blink");
+		display.drawString(25, LINE2, "Diag");
+		display.drawString(25, LINE3, "Arch");
+		display.drawString(25, LINE4, "WiFi");
 
-		display.drawString(60, 13, check_display_value(uxHighWaterMark_TaskBlink		, 0, 0, 6)+";");
-		display.drawString(60, 25, check_display_value(uxHighWaterMark_TaskDiagLevel	, 0, 0, 6)+";");
-		display.drawString(60, 37, check_display_value(uxHighWaterMark_TaskArchiveMeas	, 0, 0, 6)+";");
-		display.drawString(60, 49, check_display_value(uxHighWaterMark_TaskWiFi			, 0, 0, 6)+";");
+		display.drawString(60, LINE1, check_display_value(uxHighWaterMark_TaskBlink		, 0, 0, 6)+";");
+		display.drawString(60, LINE2, check_display_value(uxHighWaterMark_TaskDiagLevel	, 0, 0, 6)+";");
+		display.drawString(60, LINE3, check_display_value(uxHighWaterMark_TaskArchiveMeas	, 0, 0, 6)+";");
+		display.drawString(60, LINE4, check_display_value(uxHighWaterMark_TaskWiFi			, 0, 0, 6)+";");
 
-		display.drawString(90, 13, "Sens");
-		display.drawString(90, 25, "Keyb");
-		display.drawString(90, 37, "Disp");
-		display.drawString(90, 49, "");
+		display.drawString(90, LINE1, "Sens");
+		display.drawString(90, LINE2, "Keyb");
+		display.drawString(90, LINE3, "Disp");
+		display.drawString(90, LINE4, "");
 
-		display.drawString(125, 13, check_display_value(uxHighWaterMark_TaskReadSensors	, 0, 0, 6));
-		display.drawString(125, 25, check_display_value(uxHighWaterMark_TaskKeyboard	, 0, 0, 6));
-		display.drawString(125, 37, check_display_value(uxHighWaterMark_TaskDisplay		, 0, 0, 6));
+		display.drawString(125, LINE1, check_display_value(uxHighWaterMark_TaskReadSensors	, 0, 0, 6));
+		display.drawString(125, LINE2, check_display_value(uxHighWaterMark_TaskKeyboard	, 0, 0, 6));
+		display.drawString(125, LINE3, check_display_value(uxHighWaterMark_TaskDisplay		, 0, 0, 6));
 
 		break;
 	case (6):
@@ -1554,17 +1561,17 @@ void display_values() {
 		display_header = F("Info [M=CLR]");
 
 		display.setTextAlignment(TEXT_ALIGN_RIGHT);
-		display.drawString(30, 13, "Recs:");
-		display.drawString(90, 13, "RID:");
-		display.drawString(30, 25, "SSID:");
-		display.drawString(30, 37, "IP:");
+		display.drawString(30, LINE1, "Recs:");
+		display.drawString(90, LINE1, "RID:");
+		display.drawString(30, LINE2, "SSID:");
+		display.drawString(30, LINE3, "IP:");
 
 		display.setTextAlignment(TEXT_ALIGN_LEFT);
-		display.drawString(40, 13, String(rec_count));
-		display.drawString(100,13, String((int)RID));
+		display.drawString(40, LINE1, String(rec_count));
+		display.drawString(100,LINE1, String((int)RID));
 
-		display.drawString(40, 25, "\"" + WiFi.SSID() + " \" (" + String(calcWiFiSignalQuality(WiFi.RSSI())) + "%)");
-		display.drawString(40, 37, WiFi.localIP().toString());
+		display.drawString(40, LINE2, "\"" + WiFi.SSID() + " \" (" + String(calcWiFiSignalQuality(WiFi.RSSI())) + "%)");
+		display.drawString(40, LINE3, WiFi.localIP().toString());
 
 		if(BUT_B_PRESS){
 			BUT_DB_CLEAR_FLAG = true;
@@ -1582,17 +1589,17 @@ void display_values() {
 		display_header = F("Mode");
 
 		display.setTextAlignment(TEXT_ALIGN_RIGHT);
-		display.drawString(45,  25, "No GPS");
-		display.drawString(45,  37, "GPS");
+		display.drawString(45,  LINE2, "No GPS");
+		display.drawString(45,  LINE3, "GPS");
 
 		display.setTextAlignment(TEXT_ALIGN_LEFT);
-		display.drawString(50,  13, "NORM    SLOW");
+		display.drawString(50,  LINE1, "NORM    SLOW");
 
-		display.drawString(60,  25, String(Mode == RecMode::NoGPS? "O":""));
-		display.drawString(60,  37, String(Mode == RecMode::GPS  ? "O":""));
+		display.drawString(60,  LINE2, String(Mode == RecMode::NoGPS? "O":""));
+		display.drawString(60,  LINE3, String(Mode == RecMode::GPS  ? "O":""));
 
-		display.drawString(110, 25, String(Mode == RecMode::NoGPS_Slow? "O":""));
-		display.drawString(110, 37, String(Mode == RecMode::GPS_Slow  ? "O":""));
+		display.drawString(110, LINE2, String(Mode == RecMode::NoGPS_Slow? "O":""));
+		display.drawString(110, LINE3, String(Mode == RecMode::GPS_Slow  ? "O":""));
 
 		break;
 
@@ -1633,14 +1640,14 @@ void display_values() {
 			break;
 		}
 
-		display.drawString(100, 0, printLocalTime("%H:%M"));
-		display.drawString(80,  0, StMode);
+		display.drawString(100, LINEM, printLocalTime("%H:%M"));
+		display.drawString(80,  LINEM, StMode);
 
 		if(inWindow){
-			display.drawString(60,  0, "[H]");
+			display.drawString(60,  LINEM, "[H]");
 		}
 
-		display.drawString(0,  0, display_header);
+		display.drawString(0,  LINEM, display_header);
 
 
 	}
@@ -1653,7 +1660,7 @@ void display_values() {
 			Y = 64-18-Y;
 			Y = (Y<1 ? 1 : Y);
 			display.setPixel(i, Y);
-			display.setPixel(i, 64-16);
+			display.setPixel(i, 64-17);
 		}
 
 	}
@@ -1739,6 +1746,32 @@ void disable_unneeded_nmea() {
 //	serialGPS.println(F("$PUBX,40,RMC,0,0,0,0*47"));			 // Recommended minimum specific GPS/Transit data
 	serialGPS.println(F("$PUBX,40,GSV,0,0,0,0*59"));			 // GNSS satellites in view
 	serialGPS.println(F("$PUBX,40,VTG,0,0,0,0*5E"));			 // Track made good and ground speed
+}
+
+// Send a byte array of UBX protocol to the GPS
+void sendUBX(uint8_t *MSG, uint8_t len) {
+	for(int i=0; i<len; i++) {
+		serialGPS.write(MSG[i]);
+	}
+}
+
+// https://github.com/JuniorIOT/GPS-Lora-Balloon-rfm95-TinyGPS/blob/master/Balloon-rfm95/Balloon-rfm95.ino
+// A lot of commands there:
+void gps_SetMode_gpsOff() {
+
+  ////Set GPS to backup mode (sets it to never wake up on its own) minimal current draw <5mA, loses all settings
+  //uint8_t GPSoff[] = {0xB5, 0x62, 0x02, 0x41, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x4D, 0x3B};
+  ////Restart GPS
+  //uint8_t GPSon[] = {0xB5, 0x62, 0x02, 0x41, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x4C, 0x37};
+
+  byte arrCommand[] = {0xB5, 0x62, 0x02, 0x41, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x4D, 0x3B};
+  sendUBX(arrCommand, sizeof(arrCommand)/sizeof(uint8_t));
+  // after this command no gps output is available
+}
+void gps_SetMode_gpsOn() {
+
+  byte arrCommand[] = {0xB5, 0x62, 0x02, 0x41, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x4C, 0x37};
+  sendUBX(arrCommand, sizeof(arrCommand)/sizeof(uint8_t));
 }
 
 
