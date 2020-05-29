@@ -190,10 +190,13 @@ time_t now;	// Time variable
 
 int	 debugPrev			= 0;
 long next_display_count = 0;
+long next_trend_count	= 0;
 
 bool BUT_A_PRESS=false;
 bool BUT_B_PRESS=false;
 bool BUT_C_PRESS=false;
+
+bool BUT_B_PRESS_FP1=false;
 
 uint32_t AnyButtonPressed = 0;
 
@@ -340,9 +343,9 @@ void setup() {
 		for(int del=0; del<42; del++){
 
 			digitalWrite(LED_BUILTIN, HIGH);    // turn the LED ON by making the voltage HIGH
-			vTaskDelay(100); // one tick delay (1ms) in between reads for stability
+			vTaskDelay(50); // one tick delay (1ms) in between reads for stability
 			digitalWrite(LED_BUILTIN, LOW );
-			vTaskDelay(100); // one tick delay (1ms) in between reads for stability
+			vTaskDelay(50); // one tick delay (1ms) in between reads for stability
 			progress += " .";
 
 			#ifdef CFG_LCD
@@ -699,6 +702,9 @@ void loop()
 		String PMS_025;
 		String PMS_010;
 
+		String PMSE_100;
+		String PMSE_025;
+		String PMSE_010;
 
 		if (!db_open(DB_PATH, &db)){
 
@@ -714,6 +720,7 @@ void loop()
 
 					String MeasSDS		= "";
 					String MeasPMS		= "";
+					String MeasPMSE		= "";
 					String MeasGPS		= "";
 					String MeasBME		= "";
 
@@ -738,6 +745,9 @@ void loop()
 						sql = "SELECT Id, PM100, PM025, PM010 FROM measPMS WHERE Id='" + RowID + "' LIMIT 1";
 						GetDB_Data(sql.c_str(), TEMP1	, MeasPMS);
 
+						sql = "SELECT Id, PM100, PM025, PM010 FROM measPMSE WHERE Id='" + RowID + "' LIMIT 1";
+						GetDB_Data(sql.c_str(), TEMP1	, MeasPMSE);
+
 						sql = "SELECT Id, temp, humid, press  FROM measBME WHERE Id='" + RowID + "' LIMIT 1";
 						GetDB_Data(sql.c_str(), TEMP1	, MeasBME);
 
@@ -746,10 +756,11 @@ void loop()
 						GetDB_Data(sql.c_str(), TEMP1	, MeasGPS);
 #endif
 
-						debug_out(("WWW: From measSDS DB: ") + MeasSDS,											DEBUG_MED_INFO, 1);
-						debug_out(("WWW: From measPMS DB: ") + MeasPMS,											DEBUG_MED_INFO, 1);
-						debug_out(("WWW: From measBME DB: ") + MeasBME,											DEBUG_MED_INFO, 1);
-						debug_out(("WWW: From measGPS DB: ") + MeasGPS,											DEBUG_MED_INFO, 1);
+						debug_out(("WWW: From measSDS DB: ") +  MeasSDS,										DEBUG_MED_INFO, 1);
+						debug_out(("WWW: From measPMS DB: ") +  MeasPMS,										DEBUG_MED_INFO, 1);
+						debug_out(("WWW: From measPMSE DB: ") + MeasPMSE,										DEBUG_MED_INFO, 1);
+						debug_out(("WWW: From measBME DB: ") +  MeasBME,										DEBUG_MED_INFO, 1);
+						debug_out(("WWW: From measGPS DB: ") +  MeasGPS,										DEBUG_MED_INFO, 1);
 
 						vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
 
@@ -767,6 +778,9 @@ void loop()
 						PMS_025				=	StrSplitItem(MeasPMS, ',', 2);
 						PMS_010				=	StrSplitItem(MeasPMS, ',', 3);
 
+						PMSE_100			=	StrSplitItem(MeasPMSE, ',', 1);
+						PMSE_025			=	StrSplitItem(MeasPMSE, ',', 2);
+						PMSE_010			=	StrSplitItem(MeasPMSE, ',', 3);
 
 						if(GSdata){
 							// GPS data
@@ -789,6 +803,10 @@ void loop()
 							data += Var2Json(F("PMS_P1"),						PMS_100); // PM10.0
 							data += Var2Json(F("PMS_P2"),						PMS_025); // PM 2.5
 							data += Var2Json(F("PMS_P3"),						PMS_010); // PM 1.0
+
+							data += Var2Json(F("PMSE_P1"),						PMSE_100); // PM10.0
+							data += Var2Json(F("PMSE_P2"),						PMSE_025); // PM 2.5
+							data += Var2Json(F("PMSE_P3"),						PMSE_010); // PM 1.0
 
 							data += "]}";
 
@@ -1390,7 +1408,7 @@ void TaskKeyboard(void *pvParameters)  // This is a task.
 	else{
 		AnyButtonPressed = 0;
 	}
-	if(AnyButtonPressed > xFrequency*2){
+	if(AnyButtonPressed > xFrequency){
 		digitalWrite(SUPPLY, LOW);
 	}
 	else{
@@ -1420,7 +1438,7 @@ void TaskReadSensors(void *pvParameters)  // This is a task.
     sensorPMS(&serialPMS_EXT, &PMSEmeasPM010, &PMSEmeasPM025, &PMSEmeasPM100);
     vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
 
-    sensorSDS(&serialSDS, &PMSmeasPM025, &PMSmeasPM100);
+    sensorSDS(&serialSDS, &SDSmeasPM025, &SDSmeasPM100);
     vTaskDelay(100);  // one tick delay (1ms) in between reads for stability
     sensorBME280();
     vTaskDelay(150);  // one tick delay (1ms) in between reads for stability
@@ -1480,6 +1498,9 @@ void display_values() {
 
 	screens[screen_count++] = 5;	// Wifi info
 	screens[screen_count++] = 6;	// chipID, firmware and count of measurements
+
+	screens[screen_count++] = 2;	// EXT PMS sensor
+
 	screens[screen_count++] = 11;	// Trend, GPS, Values
 
 	if(next_display_count<0){		// Fix bug with previous display of 0 screen
@@ -1494,15 +1515,13 @@ void display_values() {
 	switch (screens[next_display_count % screen_count]) {
 
 	case (1):
-
-
-		display_header =  F("PM (µg/m³)");
+		display_header =  F("PM (ug/m3)");
 
 		display.setTextAlignment(TEXT_ALIGN_RIGHT);
-		display.drawString(50, LINE1, "PM 0.1:");
-		display.drawString(50, LINE2, "PM 2.5:");
-		display.drawString(50, LINE3, "PM 10.0:");
-		display.drawString(50, LINE4, "AQI:");
+		display.drawString(45, LINE1, "PM 0.1:");
+		display.drawString(45, LINE2, "PM 2.5:");
+		display.drawString(45, LINE3, "PM 10.0:");
+		display.drawString(45, LINE4, "AQI:");
 
 		display.setTextAlignment(TEXT_ALIGN_LEFT);
 		display.drawString(55, LINE1, check_display_value(PMSmeasPM010.ArchMeas.avg[0], -1.0, 1, 6));
@@ -1518,6 +1537,33 @@ void display_values() {
 
 		AQI_value = (int)max(getAQI( false, SDSmeasPM025.ArchMeas.avg[0] ),getAQI( true, SDSmeasPM100.ArchMeas.avg[0] ));
 		display.drawString(55, LINE4, String(AQI_value) + " (" + updateAQIDisplay(AQI_value) + ")");
+
+		break;
+
+	case (2):
+		display_header =  F("Ext (ug/m3)");
+
+		display.setTextAlignment(TEXT_ALIGN_RIGHT);
+		display.drawString(45, LINE1, "PM 0.1:");
+		display.drawString(45, LINE2, "PM 2.5:");
+		display.drawString(45, LINE3, "PM 10.0:");
+		display.drawString(45, LINE4, "CRC Err:");
+
+		display.setTextAlignment(TEXT_ALIGN_LEFT);
+		display.drawString(55, LINE1, check_display_value(PMSEmeasPM010.ArchMeas.min[0], -1.0, 1, 6));
+		display.drawString(55, LINE2, check_display_value(PMSEmeasPM025.ArchMeas.min[0], -1.0, 1, 6));
+		display.drawString(55, LINE3, check_display_value(PMSEmeasPM100.ArchMeas.min[0], -1.0, 1, 6));
+		display.drawString(55, LINE4, check_display_value(PMSEmeasPM100.CRCerrRate, -1.0, 1, 6));
+
+		display.drawString(85, LINE1, ";");
+		display.drawString(85, LINE2, ";");
+		display.drawString(85, LINE3, ";");
+		display.drawString(85, LINE4, ";");
+
+		display.drawString(90, LINE1, check_display_value(PMSEmeasPM010.ArchMeas.max[0], -1.0, 1, 6));
+		display.drawString(90, LINE2, check_display_value(PMSEmeasPM025.ArchMeas.max[0], -1.0, 1, 6));
+		display.drawString(90, LINE3, check_display_value(PMSEmeasPM100.ArchMeas.max[0], -1.0, 1, 6));
+		display.drawString(90, LINE4, (PMSEmeasPM100.status == SensorSt::ok ? "   OK" : "  not OK"));
 
 		break;
 
@@ -1675,20 +1721,52 @@ void display_values() {
 
 	}
 	else{
+		float *trend_meas = BMEmeasT.ArchMeas.avg;
+
+		if(BUT_B_PRESS && !BUT_B_PRESS_FP1){
+			next_trend_count++;
+		}
+
+		switch (next_trend_count % 4) {
+
+		case (0):
+			trend_meas = PMSmeasPM025.ArchMeas.avg;
+			display_header = "PMS PM2.5";
+			break;
+
+		case (1):
+			trend_meas = SDSmeasPM025.ArchMeas.avg;
+			display_header = "SDS PM2.5";
+			break;
+
+		case (2):
+			trend_meas = PMSEmeasPM025.ArchMeas.avg;
+			display_header = "PMS ext PM2.5";
+			break;
+
+		default:
+			trend_meas = BMEmeasT.ArchMeas.avg;
+			display_header = "BME Temp";
+			break;
+
+		}
+
 		for(int i=1; i<display.getWidth(); i++){
 			int16_t Y=0;
 
-			Y = int(PMSmeasPM025.ArchMeas.avg[i]/4);
+			Y = int(*(trend_meas+i)/4);
 
 			Y = 64-18-Y;
 			Y = (Y<1 ? 1 : Y);
 			display.setPixel(i, Y);
-			display.setPixel(i, 64-17);
+			display.setPixel(i, 64-16);
 		}
+		display.drawString(0,  LINEM, display_header);
 
 	}
 
 	display.display();
+	BUT_B_PRESS_FP1 = BUT_B_PRESS;
 	xSemaphoreGive(I2C_mutex);
 }
 

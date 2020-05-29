@@ -186,11 +186,11 @@ void sensorSDS(Stream *UART_PMS, PMmeas *measPM025, PMmeas *measPM100) {
 					 */
 
 					debug_out(F("SDS PM 2.5:"), 			DEBUG_MED_INFO, 0);
-					debug_out(measPM025->DebugRange(),	DEBUG_MED_INFO, 1);
+					debug_out(measPM025->DebugRange(),		DEBUG_MED_INFO, 1);
 					debug_out(F("SDS PM10.0:"), 			DEBUG_MED_INFO, 0);
-					debug_out(measPM100->DebugRange(),	DEBUG_MED_INFO, 1);
+					debug_out(measPM100->DebugRange(),		DEBUG_MED_INFO, 1);
 
-					debug_out(F("SDS CRC:"), 				DEBUG_MAX_INFO, 1);
+					debug_out(F("SDS CRC:"), 				DEBUG_MED_INFO, 1);
 					debug_out(measPM100->DebugCRC(),		DEBUG_MED_INFO, 1);
 				}
 				len = 0;
@@ -361,7 +361,7 @@ void sensorPMS(Stream *UART_PMS, PMmeas *measPM010, PMmeas *measPM025, PMmeas *m
 						debug_out(F("PMS PM10.0:"), 			DEBUG_MED_INFO, 0);
 						debug_out(measPM100->DebugRange(),		DEBUG_MED_INFO, 1);
 
-						debug_out(F("PMS CRC:"), 				DEBUG_MAX_INFO, 1);
+						debug_out(F("PMS CRC:"), 				DEBUG_MED_INFO, 1);
 						debug_out(measPM100->DebugCRC(),		DEBUG_MED_INFO, 1);
 
 

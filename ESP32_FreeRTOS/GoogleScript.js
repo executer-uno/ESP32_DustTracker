@@ -109,6 +109,16 @@ function doPost(e) {
         tmp.getRange("F5:H5").setValues(values);        
         values[0] = parsedData.values.sensordatavalues.PMS_P3.split(":");
         tmp.getRange("I5:K5").setValues(values);        
+
+
+        //PMS3007 External sensor
+        values[0] = parsedData.values.sensordatavalues.PMSE_P1.split(":");
+        tmp.getRange("AC5:AE5").setValues(values);
+        values[0] = parsedData.values.sensordatavalues.PMSE_P2.split(":");
+        tmp.getRange("AF5:AH5").setValues(values);        
+        values[0] = parsedData.values.sensordatavalues.PMSE_P3.split(":");
+        tmp.getRange("AI5:AK5").setValues(values);   
+
         
         //SDS011
         values[0] = parsedData.values.sensordatavalues.SDS_P1.split(":");
