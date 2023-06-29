@@ -9,7 +9,7 @@ Basic opendata-stuttgart project was done on ESP8266 chip, with no OS usage. Mai
 * SQLite on SD card
 
 To make it portable some data buffer required. For easy data store and acess and modification SQLite library was used. Works like a charm. 
-* SoftwareSerial for debug output
+* SoftwareSerial for debug output **(v 5.4.0)**
 
 All 3 available hardware UARTs used for sensors communication. Some time Bluetooth was used as a fourth debug USART, but some moment it appears that it wery hungry for RAM in Arduino libraryes, so switched back to SoftwareSerial for debug port. It brokes characters time to time, but its better than nothing.
 ESP32 SoftwareSerial was little bit reconfigured to be able to use build-in USB-UART adapter pins (https://github.com/plerup/espsoftwareserial/pull/134#issue-364533170)
